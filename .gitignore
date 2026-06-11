@@ -1,0 +1,17 @@
+node_modules/
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+
+# Runtime experiment output
+experiments/logs/*
+!experiments/logs/.gitkeep
+experiments/results/*
+!experiments/results/.gitkeep
+
+# Logs and OS/editor noise
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+\section{Agent A: the BDI agent}
+% TODO: fill after Challenge 1 validation. (BDI quality = 30% of the grade.)
+% Content plan:
+%  - Belief model: fields, timestamps, decay projection, negative
+%    evidence on re-observed tiles (lab2 principles).
+%  - Belief reconciliation (REAL FINDING, tell this story): live testing
+%    on 2026-06-11 exposed that server ack shapes differ from the SDK
+%    types (pickup/putdown acks without an `id` field). Phantom carry
+%    beliefs caused 336 futile putdown retries in one 60 s run.
+%    Fix: normalizeIdList + markTilePickedUp/clearCarried — a concrete
+%    instance of lab2's "my knowledge was wrong, not the world" case.
+%    Before/after data: experiments/results/live-smoke*.json
+%    (score 173 -> 800, deliveries 7 -> 30 on the same map/duration).
+%  - Options and utilities; the strategies implemented and their
+%    intuition (greedy-nearest baseline, reward-distance, delivery-threshold).
+%  - Intention revision: replace policy with additive hysteresis;
+%    stop conditions (achieved / impossible / not worthwhile).
+%  - Plan library and failure handling (move retries, soft-blocked
+%    tiles, plan fallback).
+%  - Validation on Challenge 1 maps, including the directional-arrow
+%    maps (26c1_4/5) and the omniscient NPC competitor.
