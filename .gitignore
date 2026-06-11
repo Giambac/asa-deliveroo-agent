@@ -15,3 +15,9 @@ experiments/results/*
 *.log
 .DS_Store
 Thumbs.db
+
+# LaTeX build artifacts (PDFs are committed, intermediates are not)
+*.aux
+*.toc
+*.out
+*.synctex.gz

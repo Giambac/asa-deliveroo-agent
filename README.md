@@ -25,6 +25,10 @@ interpretation and a meaningful (optional-at-runtime) PDDL integration.
 | Experiments / evidence | `src/metrics/`, `scripts/run-experiment.js`, `experiments/` |
 | 10-page LaTeX report | `report/` (skeleton with per-section content plans) |
 
+A study guide (in Italian) covering the whole architecture, the current
+state and the evolution roadmap lives in `report/DocumentoStudio1.tex`
+(+ compiled PDF) — start there to understand and extend the codebase.
+
 ## Architecture in one diagram
 
 ```
