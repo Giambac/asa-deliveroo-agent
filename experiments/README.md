@@ -11,7 +11,13 @@ Run outputs live here:
 - `results/` — one JSON summary per run (final score, counters, score timeline),
   written when the agent stops (`scripts/run-experiment.js` does this automatically).
 
-The `live-smoke*` files are real validation runs (2026-06-11, local server,
+Note: raw run outputs are **git-ignored** (only the `.gitkeep`
+placeholders are committed) — logs and results live only on the machine
+that produced them. Keep the numbers you need for the report in the
+report sources or in these READMEs.
+
+The `live-smoke*` files (present locally if you ran the validation; not
+committed) are real validation runs (2026-06-11, local server,
 `empty_10`, 60 s each). They double as a before/after example of the
 belief-reconciliation fix: `live-smoke` (score 173, 336 futile putdown
 retries caused by phantom carry beliefs) vs `live-smoke2` (score 800,

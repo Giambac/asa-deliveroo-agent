@@ -152,8 +152,8 @@ interpretations, protocol messages) and — when stopped via
   the graph, pathfinding, belief revision, strategies, mission parsing,
   PDDL problem generation and ack normalization.
 - **Validated live** (2026-06-11, local server, `empty_10` map, 60 s):
-  `reward-distance` scored 800 with 30 parcels delivered; see
-  `experiments/results/live-smoke2-*.json`.
+  `reward-distance` scored 800 with 30 parcels delivered (raw run
+  outputs are git-ignored; see `experiments/README.md` for the numbers).
 - Deterministic pathfinding on the directed map graph (arrow tiles
   supported from day one; delivery distances via reversed multi-source BFS).
 - Four working example strategies and a strategy registry.

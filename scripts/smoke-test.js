@@ -71,6 +71,12 @@ beliefs.updateSensing({
 });
 assert(beliefs.parcels.has('p1'), 'parcel sensed');
 assert(beliefs.projectedReward(beliefs.parcels.get('p1')) === 30, 'projected reward fresh = 30');
+// Decay projection follows server semantics: −1 per WHOLE decay tick
+// (1.5 intervals elapsed -> one tick deducted, not a floored 1.5).
+const agedParcel = { rewardAtLastSeen: 30, lastSeen: Date.now() - 1500 };
+assert(beliefs.projectedReward(agedParcel) === 29, 'projection deducts whole decay ticks only');
+const futureParcel = { rewardAtLastSeen: 30, lastSeen: Date.now() + 5000 };
+assert(beliefs.projectedReward(futureParcel) === 30, 'projection tolerates clock skew (no negative elapsed)');
 assert(Math.abs(beliefs.decayPerTile() - 0.1) < 1e-9, 'decayPerTile = 100ms/1000ms');
 beliefs.updateSensing({ positions: [{ x: 1, y: 0 }], parcels: [], agents: [] });
 assert(!beliefs.parcels.has('p1'), 'negative evidence deletes parcel belief');
