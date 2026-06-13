@@ -2,7 +2,16 @@
 % TODO: fill with data from experiments/results/.
 % Content plan:
 %  - Methodology: same scenario, >=5 runs per strategy, mean +/- std
-%    (spawns are random).
+%    (spawns are random). Harness: per map, start the server with
+%    GAME_NAME=26c1_N, then scripts/run-baseline.js runs every strategy
+%    x N fresh-identity runs; scripts/aggregate-results.js (core in
+%    src/metrics/aggregate.js) produces the comparison table / CSV.
+%  - Note the per-map config differences that make strategy choice
+%    matter (from assets/games/26c1_*.json): decay 1s vs 2s, reward 30
+%    vs 50, capacity 20 vs 5 on maps 4-5, intelligent NPC on maps 4-5,
+%    one-way arrows on map 5 -> expect delivery-threshold to win on the
+%    slow-decay/high-reward maps (7,8) and opponent-aware behaviour to
+%    matter on 4,5.
 %  - Preliminary validation data already available (2026-06-11, local
 %    server, empty_10, 60 s): reward-distance scored 800 with 30
 %    deliveries; the live-smoke vs live-smoke2 pair quantifies the

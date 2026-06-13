@@ -64,6 +64,14 @@ npm install
 cp .env.example .env      # then edit
 ```
 
+On Windows PowerShell, use `npm.cmd` and `Copy-Item`:
+
+```powershell
+cd asa-deliveroo-agent
+npm.cmd install
+Copy-Item .env.example .env   # then edit
+```
+
 Environment variables (see `.env.example` for the full commented list):
 
 - `HOST` — server URL; `NAME` — agent name on first connection;
@@ -90,6 +98,25 @@ node scripts/run-llm.js --name agentB --strategy mission-aware
 
 # Timed experiment that writes a result summary and exits
 node scripts/run-experiment.js --strategy greedy-nearest --duration 180 --label 26c1_1
+```
+
+The map is selected **server-side** when starting Deliveroo.js; the agent
+just connects. In `Deliveroo.js/backend`:
+
+```bash
+GAME_NAME=26c1_3 npm start                       # macOS / Linux (bash)
+```
+```powershell
+$env:GAME_NAME='26c1_3'; npm.cmd start           # Windows PowerShell
+```
+
+To benchmark a whole map — every strategy, several fresh-identity runs
+each — and summarize the results into a comparison table (these run the
+same on every OS):
+
+```bash
+node scripts/run-baseline.js --label 26c1_3 --duration 120 --runs 5
+node scripts/aggregate-results.js --scenario 26c1   # markdown table (+ --csv path)
 ```
 
 For a two-agent team run: start both agents with each other's name in
@@ -169,6 +196,10 @@ interpretations, protocol messages) and — when stopped via
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
 - Metrics, structured run logs, experiment runner, report skeleton.
+- Baseline harness: `scripts/run-baseline.js` (every strategy × N
+  fresh-identity runs against the loaded map) and
+  `scripts/aggregate-results.js` (group results by scenario × strategy,
+  mean/std/min/max score and delivered, markdown table + optional CSV).
 
 ## What remains for future phases
 

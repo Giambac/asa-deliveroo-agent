@@ -17,6 +17,7 @@ import { PddlPlanner } from '../src/planning/PddlPlanner.js';
 import { buildDefaultPlanLibrary } from '../src/core/PlanLibrary.js';
 import { makeMessage, isProtocolMessage } from '../src/communication/MessageTypes.js';
 import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
+import { aggregateResults } from '../src/metrics/aggregate.js';
 import { normalizeIdList } from '../src/utils/serialization.js';
 
 let failures = 0;
@@ -173,6 +174,18 @@ assert(!beliefs.parcels.has('mine') && beliefs.parcels.has('theirs'), 'clearCarr
 beliefs.parcels.set('onTile', { id: 'onTile', x: 0, y: 0, reward: 9, rewardAtLastSeen: 9, lastSeen: Date.now(), carriedBy: null });
 beliefs.markTilePickedUp();
 assert(beliefs.parcels.get('onTile').carriedBy === 'me1', 'markTilePickedUp marks free parcels on my tile');
+
+// --- Baseline result aggregation (scripts/aggregate-results.js core) -----------
+const aggRows = aggregateResults([
+  { scenario: '26c1_1', strategy: 'reward-distance', finalScore: 800, counters: { parcelsDelivered: 30, intentionChanges: 98 } },
+  { scenario: '26c1_1', strategy: 'reward-distance', finalScore: 600, counters: { parcelsDelivered: 24, intentionChanges: 80 } },
+  { scenario: '26c1_1', strategy: 'greedy-nearest', finalScore: 500, counters: { parcelsDelivered: 20 } },
+  { scenario: 'bad', strategy: 'x', finalScore: 'NaN' }, // ignored: non-numeric score
+]);
+const rd = aggRows.find((r) => r.strategy === 'reward-distance');
+assert(aggRows.length === 2, 'aggregateResults groups by (scenario, strategy) and drops invalid records');
+assert(rd && rd.n === 2 && rd.scoreMean === 700 && rd.scoreMin === 600 && rd.scoreMax === 800, 'aggregateResults computes mean/min/max per group');
+assert(aggRows[0].strategy === 'reward-distance', 'aggregateResults sorts best mean score first within a scenario');
 
 if (failures > 0) {
   console.error(`\n${failures} smoke test(s) FAILED.`);
