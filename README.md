@@ -143,6 +143,15 @@ shout and start exchanging position heartbeats, claims and mission updates.
 | `delivery-threshold` | Like reward-distance, but batch pickups until N parcels / value threshold, then deliver. |
 | `mission-aware` | reward-distance + obeys mission state (bonus goals, delivery policies). Agent B default. |
 
+Retrospective benchmark (no runtime default was changed after the fact):
+in the Challenge 1 evaluation (8 maps × 4 strategies × 5 runs)
+`greedy-nearest` emerges as the strongest baseline — it wins or ties on all
+maps because it hoards and delivers in big batches (~7.6 parcels/delivery)
+while the value-aware strategies small-batch (~2), maximizing throughput on
+these parcel-rich maps. Run it with `--strategy greedy-nearest`. Details and
+the falsified "batching-wins" hypothesis are in
+`experiments/RESULTS-baseline-v1.md`.
+
 ## Adding a new strategy
 
 1. Create `src/strategies/MyStrategy.js`:

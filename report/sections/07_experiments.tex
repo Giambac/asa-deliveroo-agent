@@ -9,9 +9,17 @@
 %  - Note the per-map config differences that make strategy choice
 %    matter (from assets/games/26c1_*.json): decay 1s vs 2s, reward 30
 %    vs 50, capacity 20 vs 5 on maps 4-5, intelligent NPC on maps 4-5,
-%    one-way arrows on map 5 -> expect delivery-threshold to win on the
-%    slow-decay/high-reward maps (7,8) and opponent-aware behaviour to
-%    matter on 4,5.
+%    one-way arrows on map 5.
+%  - RESULT (baseline-v1, experiments/RESULTS-baseline-v1.md): greedy-nearest
+%    wins outright on 6/8 maps and ties on 26c1_3 and 26c1_5; it is never
+%    beaten. The "slow-decay favours batching" prediction for 26c1_7/8 was
+%    FALSIFIED -- delivery-threshold does worst there. Diagnosed cause
+%    (step 3a, from run logs): greedy hoards (~7.6 parcels/delivery, delivers
+%    only when nothing reachable) and so out-collects the value-aware
+%    strategies, which all small-batch (~2/delivery); no real plan failures.
+%    Honesty note worth including: the apparent mission-aware vs
+%    reward-distance gap on 26c1_2/4 was small-sample noise (code + logs show
+%    they are identical with no mission).
 %  - Preliminary validation data already available (2026-06-11, local
 %    server, empty_10, 60 s): reward-distance scored 800 with 30
 %    deliveries; the live-smoke vs live-smoke2 pair quantifies the

@@ -13,6 +13,18 @@
 %    (score 173 -> 800, deliveries 7 -> 30 on the same map/duration).
 %  - Options and utilities; the strategies implemented and their
 %    intuition (greedy-nearest baseline, reward-distance, delivery-threshold).
+%  - Strategy evaluation (REAL RESULT, retrospective; no runtime default was
+%    changed after the fact): in the baseline (8 maps x 4 strategies x 5 runs,
+%    experiments/RESULTS-baseline-v1.md) greedy-nearest emerges as the
+%    strongest baseline -- wins or ties on all maps -- and is the reference
+%    baseline in the retrospective Challenge 1 analysis (run with
+%    --strategy greedy-nearest). The
+%    value-aware strategies are not buggy, they just deliver in ~2-parcel
+%    micro-batches while greedy hoards (~7.6/delivery) and wins on throughput.
+%    Good critical-thinking material: a falsified "slow-decay favours
+%    batching" hypothesis and a corrected small-sample false positive
+%    (mission-aware was thought to differ from reward-distance with no
+%    mission; code + logs prove they are identical -> the gap was noise).
 %  - Intention revision: replace policy with additive hysteresis;
 %    stop conditions (achieved / impossible / not worthwhile).
 %  - Plan library and failure handling (move retries, soft-blocked

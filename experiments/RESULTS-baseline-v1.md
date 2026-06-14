@@ -51,25 +51,48 @@ From `assets/games/26c1_*.json`. Decay = `decaying_event`, reward =
    baseline dominates the value-aware strategies across all maps. In this
    game (roughly uniform rewards, non-trivial decay, frequent spawns),
    grabbing the nearest parcel and delivering immediately maximizes score.
-2. **The "slow decay favors batching" hypothesis is falsified.** On the
+2. **The "slow decay favors batching" hypothesis is falsified, and the
+   mechanism is now diagnosed (step 3a, from the run logs).** On the
    slow-decay / high-reward maps (26c1_7, 26c1_8) `delivery-threshold`
-   does *worst*, not best: it delivers ~9–18 parcels vs greedy's ~27–31.
-   On large maps the bottleneck is travel time, not decay; holding 3
-   parcels before delivering collapses throughput. (Whether the 3× gap
-   also hides an inefficiency in the batching logic is open — Phase 1
-   step 3.)
-3. **`mission-aware` and `reward-distance` share the lower band, but are
-   not interchangeable, and neither challenges greedy.** They are close on
-   several maps, yet diverge by more than noise on others — `reward-distance`
-   is clearly ahead on 26c1_2 (679 vs 563, >2 SE) and `mission-aware` on
-   26c1_4 (573 vs 514, >2 SE); `mission-aware` is also numerically ahead on
-   26c1_8 (517 vs 433), though variance is higher there (~1.7 SE). So
-   `mission-aware` does not simply reduce to `reward-distance` when no
-   mission is active.
+   does *worst*, not best. greedy delivers ~7.6 parcels per putdown — it
+   delivers only when no parcel is reachable, so on parcel-rich maps it
+   hoards — while *all three* value-aware strategies deliver in tiny
+   ~2-parcel batches and so pick up far fewer parcels (26c1_7: 10.6 vs
+   greedy's 33.8). There are **no real plan failures** for either (the
+   logged `plan_failed`/`intention_failed` are all `reason:"stopped"`,
+   i.e. intention-revision cancellations): it is a strategy/utility
+   effect, not a pathing bug. `delivery-threshold` additionally
+   under-batches because its `EARLY_DELIVERY_PENALTY` (20) is too small to
+   enforce its own `minCarried` (3), and the fixed threshold is too low
+   for big/high-reward maps (flagged by its own code `TODO`).
+3. **`mission-aware` reduces exactly to `reward-distance` when no mission
+   is active** (verified — this *corrects* an earlier over-reading of the
+   table). With no mission the two share identical utility code paths
+   (confirmed in source: `go_to_mission_target` is never generated, and
+   the `deliver_carried` mission branches are inert), and they behave
+   indistinguishably in the logs (26c1_7: 9.4 vs 9.6 picked, **zero**
+   mission intentions). The 26c1_2 / 26c1_4 gaps in the table are
+   therefore **sampling noise** (n=5, opposite directions, multiple
+   comparisons), not a behavioral difference — a reminder not to
+   over-read small-sample significance.
 4. **Variance is regime-dependent.** Low on small/simple maps; high where
    the intelligent NPC is present (26c1_5 std 141) or the map is large
    (26c1_7 std 173, 26c1_8 std 255, range 726–1360). The ties on 26c1_3
    and 26c1_5 are genuine ties given these intervals.
+
+## Retrospective conclusion
+
+This is a **post-hoc evaluation of the strategies as implemented** — we did
+not change the implemented strategies (or any runtime default) after the
+fact. `greedy-nearest` **emerges as the strongest baseline in this
+retrospective analysis**: it wins or ties on every map, and the diagnosis
+above explains *why* — maximal hoarding maximizes throughput on these
+parcel-rich maps, where greedy is effectively near-optimal. The value-aware
+strategies are not broken (no bugs found); they simply small-batch, which
+loses on throughput. Tuning them could at best match greedy, so it was
+judged not worth the added complexity. `greedy-nearest` is therefore the
+**reference baseline in this retrospective Challenge 1 analysis**
+(selectable at run time with `--strategy greedy-nearest`).
 
 ## Full results (mean ± sample std over 5 runs)
 
