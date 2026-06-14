@@ -58,8 +58,14 @@ From `assets/games/26c1_*.json`. Decay = `decaying_event`, reward =
    parcels before delivering collapses throughput. (Whether the 3× gap
    also hides an inefficiency in the batching logic is open — Phase 1
    step 3.)
-3. **`mission-aware` ≈ `reward-distance` on mission-free maps** — sanity
-   check: the inactive mission logic does not hurt.
+3. **`mission-aware` and `reward-distance` share the lower band, but are
+   not interchangeable, and neither challenges greedy.** They are close on
+   several maps, yet diverge by more than noise on others — `reward-distance`
+   is clearly ahead on 26c1_2 (679 vs 563, >2 SE) and `mission-aware` on
+   26c1_4 (573 vs 514, >2 SE); `mission-aware` is also numerically ahead on
+   26c1_8 (517 vs 433), though variance is higher there (~1.7 SE). So
+   `mission-aware` does not simply reduce to `reward-distance` when no
+   mission is active.
 4. **Variance is regime-dependent.** Low on small/simple maps; high where
    the intelligent NPC is present (26c1_5 std 141) or the map is large
    (26c1_7 std 173, 26c1_8 std 255, range 726–1360). The ties on 26c1_3
