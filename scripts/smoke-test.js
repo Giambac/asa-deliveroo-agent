@@ -18,7 +18,11 @@ import { buildDefaultPlanLibrary } from '../src/core/PlanLibrary.js';
 import { makeMessage, isProtocolMessage } from '../src/communication/MessageTypes.js';
 import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
 import { aggregateResults } from '../src/metrics/aggregate.js';
+import { RunLogger } from '../src/metrics/RunLogger.js';
 import { normalizeIdList } from '../src/utils/serialization.js';
+import os from 'node:os';
+import fs from 'node:fs';
+import nodePath from 'node:path';
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -186,6 +190,18 @@ const rd = aggRows.find((r) => r.strategy === 'reward-distance');
 assert(aggRows.length === 2, 'aggregateResults groups by (scenario, strategy) and drops invalid records');
 assert(rd && rd.n === 2 && rd.scoreMean === 700 && rd.scoreMin === 600 && rd.scoreMax === 800, 'aggregateResults computes mean/min/max per group');
 assert(aggRows[0].strategy === 'reward-distance', 'aggregateResults sorts best mean score first within a scenario');
+
+// --- RunLogger is close-safe (shutdown-race guard) -----------------------------
+const tmpLogDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'asa-logger-'));
+const rl = new RunLogger({ dir: tmpLogDir, label: 'smoke', role: 'test' });
+rl.log('alive', { ok: true });
+assert(rl.stream.listenerCount('error') > 0, 'RunLogger attaches a stream error listener (no crash on write-after-end)');
+rl.close();
+assert(rl.closed === true, 'RunLogger.close sets the closed flag');
+let loggerThrew = false;
+try { rl.log('after-close', {}); rl.close(); } catch { loggerThrew = true; }
+assert(!loggerThrew, 'RunLogger log() and close() are safe to call after close (idempotent, no throw)');
+try { fs.rmSync(tmpLogDir, { recursive: true, force: true }); } catch { /* file may still be flushing on Windows */ }
 
 if (failures > 0) {
   console.error(`\n${failures} smoke test(s) FAILED.`);

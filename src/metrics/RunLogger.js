@@ -20,14 +20,21 @@ export class RunLogger {
   constructor({ dir = 'experiments/logs', label = 'run', role = 'agent' } = {}) {
     this.label = label;
     this.role = role;
+    this.closed = false;
     this.stamp = new Date().toISOString().replace(/[:.]/g, '-');
     fs.mkdirSync(dir, { recursive: true });
     this.filePath = path.join(dir, `${label}-${role}-${this.stamp}.jsonl`);
     this.stream = fs.createWriteStream(this.filePath, { flags: 'a' });
+    // A write that races past close() emits an asynchronous 'error'
+    // (ERR_STREAM_WRITE_AFTER_END) that a try/catch around write() cannot
+    // catch; without a listener Node would crash. Swallow it: logging must
+    // never break the agent, least of all during shutdown.
+    this.stream.on('error', () => {});
   }
 
-  /** Append one event line. Never throws. */
+  /** Append one event line. Never throws; a no-op once closed. */
   log(event, payload = {}) {
+    if (this.closed) return;
     try {
       this.stream.write(`${safeStringify({ t: Date.now(), event, ...payload })}\n`);
     } catch {
@@ -43,7 +50,10 @@ export class RunLogger {
     return file;
   }
 
+  /** Idempotent: stops further logging and ends the stream once. */
   close() {
+    if (this.closed) return;
+    this.closed = true;
     this.stream.end();
   }
 }

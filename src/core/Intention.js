@@ -61,6 +61,10 @@ export class Intention {
         const result = await this.#currentPlan.execute(this.option);
         return result ?? true;
       } catch (error) {
+        // Cancellation is not a plan failure: if we were stopped, do not
+        // log plan_failed (the logger may already be closing) and do not
+        // try the next plan — propagate the stop immediately.
+        if (this.#stopped) throw { reason: 'stopped', option: this.option };
         // Plan failed: log and fall through to the next applicable plan.
         this.context.logger?.log('plan_failed', {
           option: this.option.key,

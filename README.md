@@ -188,6 +188,10 @@ interpretations, protocol messages) and — when stopped via
   (`normalizeIdList`) plus fallbacks (`markTilePickedUp`,
   `clearCarried`) when acks carry no usable ids or contradict the carry
   belief — added after live testing exposed a phantom-carry loop.
+- Close-safe shutdown logging: the run logger swallows the async
+  write-after-end stream error and is idempotent, and a stopped intention
+  reports cancellation (not a plan failure) — so tearing an agent down
+  mid-plan (e.g. between baseline runs) never crashes the process.
 - Offline smoke test (`npm test`, no server/network needed) covering
   the graph, pathfinding, belief revision, strategies, mission parsing,
   PDDL problem generation and ack normalization.
