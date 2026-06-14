@@ -99,7 +99,7 @@ assert(
   options.some((o) => o.type === 'explore') && options.some((o) => o.type === 'wait'),
   'fallback options present',
 );
-for (const id of ['greedy-nearest', 'reward-distance', 'delivery-threshold', 'mission-aware']) {
+for (const id of ['greedy-nearest', 'reward-distance', 'reward-distance-total', 'delivery-threshold', 'mission-aware']) {
   const s = createStrategy(id);
   const best = s.selectOption(gen.generate(beliefs), beliefs, planner.scoringHelpers());
   assert(best && best.type === 'go_pick_up', `${id} selects pickup`);
@@ -110,6 +110,19 @@ assert(options.some((o) => o.type === 'deliver_carried'), 'deliver option when c
 const greedy = createStrategy('greedy-nearest');
 const best2 = greedy.selectOption(gen.generate(beliefs), beliefs, planner.scoringHelpers());
 assert(best2.type === 'deliver_carried', 'greedy delivers when nothing left to pick');
+
+// --- reward-distance-total puts pickup on the total-load scale -------------------
+// With a parcel carried (p2) AND a free parcel reachable, reward-distance-total's
+// pickup utility must equal reward-distance's pickup utility plus the carried value
+// (the algebraic identity that makes it hoard instead of small-batching).
+beliefs.updateSensing({ positions: [], parcels: [{ id: 'p3', x: 1, y: 0, reward: 30, carriedBy: null }], agents: [] });
+const helpers = planner.scoringHelpers();
+const pickP3 = gen.generate(beliefs).find((o) => o.type === 'go_pick_up' && o.parcelId === 'p3');
+const carriedValue = beliefs.carried().reduce((s, p) => s + Math.max(beliefs.projectedReward(p), 0), 0);
+const uRD = createStrategy('reward-distance').utility(pickP3, beliefs, helpers);
+const uRDT = createStrategy('reward-distance-total').utility(pickP3, beliefs, helpers);
+assert(pickP3 && carriedValue > 0, 'reward-distance-total test: carried value present with a free parcel');
+assert(Math.abs(uRDT - (uRD + carriedValue)) < 1e-9, 'reward-distance-total pickup = reward-distance pickup + carried value');
 
 // --- Mission fallback parsing ----------------------------------------------------
 const F = MissionInterpreter.fallbackParse;

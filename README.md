@@ -140,6 +140,7 @@ shout and start exchanging position heartbeats, claims and mission updates.
 |---|---|
 | `greedy-nearest` | Chase the nearest parcel; deliver when nothing is reachable. Baseline. |
 | `reward-distance` | Maximize projected *delivered* value: reward − decay × distance, per carried parcel. |
+| `reward-distance-total` | Like reward-distance, but scores a pickup by the *whole load's* delivered value (pickup = reward-distance pickup + carried value), so pickup and deliver are on the same scale and it hoards instead of small-batching. Post-hoc variant evaluated against the baseline. |
 | `delivery-threshold` | Like reward-distance, but batch pickups until N parcels / value threshold, then deliver. |
 | `mission-aware` | reward-distance + obeys mission state (bonus goals, delivery policies). Agent B default. |
 

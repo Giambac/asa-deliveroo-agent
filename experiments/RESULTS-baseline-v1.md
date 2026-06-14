@@ -94,6 +94,45 @@ judged not worth the added complexity. `greedy-nearest` is therefore the
 **reference baseline in this retrospective Challenge 1 analysis**
 (selectable at run time with `--strategy greedy-nearest`).
 
+## When greedy works — and where it would not
+
+`greedy-nearest` dominates here because the Challenge 1 maps reward raw
+**throughput**: rewards are near-uniform, parcels spawn frequently, and
+hoarding-then-dumping collects more than any value-aware policy. Its
+weaknesses are *expected* — but largely absent from this dataset — when:
+rewards are heterogeneous (the nearest parcel is a poor choice); decay is
+aggressive enough that residual value at delivery dominates; capacity is
+tight (what to carry matters); opponents contest parcels (drop what a
+closer agent will take); one-way / circuit layouts make the local nearest
+misleading; or external missions impose goals/constraints greedy ignores.
+In our data the only maps where greedy is not clearly dominant are
+**26c1_3** and **26c1_5** (both within-noise ties), and the natural arena
+where a non-greedy strategy is *necessary* is **Challenge 2** (missions),
+where a mission-aware strategy wins on compliance, not on farming.
+
+## reward-distance-total — post-hoc experimental variant (preliminary, n=3)
+
+A **post-hoc experimental variant** added to test the step-3a diagnosis
+(pickup and deliver utilities were on different scales). It does **not**
+change the original challenge behavior — the implemented strategies and
+defaults are unchanged. Preliminary **smoke** campaign `rdt-smoke-v1`
+(**n=3**, not the n=5 baseline standard):
+
+| Map | metric | reward-distance | reward-distance-total | greedy-nearest |
+|---|---|---:|---:|---:|
+| 26c1_7 | score | 249 | 368 | 488 |
+| 26c1_7 | parcels/delivery | 2.7 | 5.3 | 7.1 |
+| 26c1_8 | score | 409 | 537 | 870 |
+| 26c1_8 | parcels/delivery | 1.3 | 2.2 | 3.2 |
+
+Reading: the scale fix roughly **doubles the batch size** (parcels per
+delivery) and improves `reward-distance` on both maps — confirming the
+diagnosis — but it **does not beat greedy**. This is **preliminary**: n=3,
+with one 26c1_7 run scoring 0 (high variance); no full n=5 campaign was run
+because the smoke already answers the conceptual question. Conclusion
+unchanged: greedy-nearest is the strongest Challenge 1 baseline; the
+value-aware idea was sound but under-calibrated.
+
 ## Full results (mean ± sample std over 5 runs)
 
 | Scenario | Strategy | Score mean | Score std | Min | Max | Delivered mean |
