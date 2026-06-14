@@ -10,4 +10,11 @@
 %  - Measured comparison: BFS plan vs PDDL plan (latency, plan length,
 %    failure rate) from plannerCalls/plannerFailures logs.
 %  - Discussion of problem complexity, as required.
-%  - TODO(optional): extended domain with pickup/putdown or crate pushing.
+%  - Future work / design alternative (DECISION, deliberate scope): a richer
+%    PDDL model could plan whole collect-and-deliver sequences (pickup,
+%    putdown, capacity, mission constraints). We deliberately keep PDDL at
+%    the go_to level because the environment is highly dynamic (long plans
+%    go stale within seconds) and the online solver adds latency; task
+%    selection stays with the BDI strategy, while PDDL provides a meaningful
+%    but bounded planning component. Crate-pushing is likewise out of scope
+%    (the agent assumes a static known map + partial sensing).

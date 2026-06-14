@@ -253,11 +253,24 @@ verified at runtime on the challenge server:
 - **Own carried parcels** may or may not appear in `sensing.parcels`
   (open question 12) — pickup/putdown acks are therefore treated as the
   authoritative carry signal (`markCarried`/`markDelivered`).
-- **Ack shapes vary across server versions** (verified live): pickup and
-  putdown acks may contain `{id}` objects, plain strings, or other
-  shapes. All ack ids go through `normalizeIdList`, with belief
-  reconciliation fallbacks (`markTilePickedUp`, `clearCarried`) when no
-  ids are usable or the server contradicts the carry belief.
+- **Ack shapes vary across server versions** (verified live, including on
+  the course server `deliveroojs.bears.disi.unitn.it` on 2026-06-14, where
+  pickup acks also carried **no** ids): acks may contain `{id}` objects,
+  plain strings, or no usable id. All ack ids go through `normalizeIdList`,
+  with belief reconciliation fallbacks (`markTilePickedUp`, `clearCarried`)
+  when no ids are usable or the server contradicts the carry belief — the
+  fallback was confirmed necessary on the course server too.
+- **Static map, partial dynamic sensing — no crate/pushable-obstacle
+  modeling.** The map graph is built once from `onMap` (walls,
+  delivery/spawner tiles and one-way arrows are global knowledge); parcels
+  and other agents come from *partial* sensing with memory and reward
+  decay. The agent does **not** model crates or movable obstacles, so maps
+  with crate mechanics are out of scope. A 2026-06-14 course-server
+  compatibility check confirmed connection, token issuance, map load and
+  logging all work, but the live map was `crates_one_way` (9×9): the agent
+  found most tiles unreachable (`unreachable`/`no-explore-target`
+  dominating) and scored 0 — a **compatibility limit, not a strategy
+  benchmark** (not comparable to the 26c1 baselines).
 - **Mission text formats** in the deterministic fallback parser follow
   the Challenge 2 config descriptions; coordinate *ranges* like
   "(13,15)–(16,15)" are parsed as the listed endpoints only (the LLM
