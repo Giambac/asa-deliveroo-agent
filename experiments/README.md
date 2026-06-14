@@ -48,6 +48,17 @@ The `--label` should be the scenario name so results group naturally.
 `run-baseline.js` gives each run a unique name and empty token, so scores
 start at 0 and never bleed across runs or strategies.
 
+To sweep several maps unattended, `scripts/run-campaign.js` starts/stops
+the server itself for each map and runs the baseline on each (labels are
+`<map>-<campaign>`). It is resilient per map — a failing map is recorded
+and skipped, the rest continue — and prints a succeeded/failed summary,
+then aggregates by `--scenario <campaign>`. Stop any manual server first:
+
+```bash
+node scripts/run-campaign.js --campaign baseline-v1 \
+  --maps 26c1_2,26c1_3,26c1_4,26c1_5,26c1_6,26c1_7,26c1_8 --duration 120 --runs 5
+```
+
 ## Comparing strategies
 
 Parcel spawns are random: run **at least 5 sessions per (scenario, strategy)

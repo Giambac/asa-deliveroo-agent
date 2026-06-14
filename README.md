@@ -119,6 +119,15 @@ node scripts/run-baseline.js --label 26c1_3 --duration 120 --runs 5
 node scripts/aggregate-results.js --scenario 26c1   # markdown table (+ --csv path)
 ```
 
+To run the whole multi-map campaign unattended (it starts/stops the
+server itself for each map, one failing map does not abort the rest, and
+it prints a succeeded/failed summary at the end), stop any manual server
+first, then:
+
+```bash
+node scripts/run-campaign.js --campaign baseline-v1 --maps 26c1_2,26c1_3,26c1_4,26c1_5,26c1_6,26c1_7,26c1_8 --duration 120 --runs 5
+```
+
 For a two-agent team run: start both agents with each other's name in
 `TEAMMATE_NAME` (or `--name`); they discover each other via a `hello`
 shout and start exchanging position heartbeats, claims and mission updates.
@@ -200,6 +209,10 @@ interpretations, protocol messages) and — when stopped via
   fresh-identity runs against the loaded map) and
   `scripts/aggregate-results.js` (group results by scenario × strategy,
   mean/std/min/max score and delivered, markdown table + optional CSV).
+- Unattended multi-map campaign runner `scripts/run-campaign.js`: starts
+  and stops the Deliveroo.js server per map, runs the baseline on each,
+  is resilient per map (one failing map does not abort the rest) and
+  prints a succeeded/failed summary, then aggregates.
 
 ## What remains for future phases
 
