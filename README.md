@@ -128,6 +128,25 @@ first, then:
 node scripts/run-campaign.js --campaign baseline-v1 --maps 26c1_2,26c1_3,26c1_4,26c1_5,26c1_6,26c1_7,26c1_8 --duration 120 --runs 5
 ```
 
+Challenge 2 end-to-end smoke tests can also be orchestrated from one
+terminal. The runner starts/stops the Deliveroo.js server, Agent B and
+the matching mission agent for each supported scenario, then writes a
+compact manifest and per-process logs under `experiments/c2-suite/`.
+Before running it, put the mission-agent admin token in
+`../DeliverooAgent.js/.env` (`HOST=http://localhost:8080` and
+`ADMIN_TOKEN=<god-token>`), keep the VPN connected for the LLM gateway,
+and stop any manual server:
+
+```bash
+node scripts/run-c2-suite.js --campaign c2-smoke-v1 --dry-run
+node scripts/run-c2-suite.js --campaign c2-smoke-v1 --scenarios 26c2_3,26c2_1,26c2_2,26c2_5,26c2_7
+node scripts/summarize-c2-suite.js --campaign c2-smoke-v1
+```
+
+The first suite covers single-agent Agent B behavior. Team scenarios
+(`26c2_8`, `26c2_10`) are intentionally left out until the two-agent
+coordination run is tested separately.
+
 For a two-agent team run: start both agents with each other's name in
 `TEAMMATE_NAME` (or `--name`); they discover each other via a `hello`
 shout and start exchanging position heartbeats, claims and mission updates.
@@ -213,11 +232,29 @@ interpretations, protocol messages) and — when stopped via
 - Four working example strategies and a strategy registry.
 - Mission interpretation: LLM path (schema-validated JSON) and a
   deterministic fallback covering the Challenge 2 mission catalog,
-  including instant red/green-light handling and arithmetic Q&A.
+  including JSON coordinate lists, instant red/green-light handling,
+  arithmetic Q&A and value-threshold wording such as `lower or equal to`
+  / `Threshold is`.
+- Mission execution guards: Agent B waits briefly before `deliver_at`
+  putdown so the mission observer can see the target delivery, and
+  `deliver_exactly_n` suppresses premature deliveries until the required
+  batch size is carried, including a final pre-putdown guard for missions
+  that arrive while a delivery intention is already in progress.
+  Forbidden-tile updates invalidate stale paths before the next move, and
+  `deliver_less_value_than` only puts down a selected parcel subset when
+  its projected total value is under the mission cap.
+- Latency-critical safety: prohibitions (forbidden `go_to`/`deliver_at`)
+  and red/green light are pre-applied deterministically the instant the
+  message arrives, before the LLM round-trip, then reconciled by the
+  authoritative LLM result. Closes a live-observed window where a slow
+  interpretation (8.7 s) let the agent cross a forbidden tile.
 - Team protocol: discovery, position heartbeat, claims, mission updates,
   acks; validated tool registry for LLM tool-loop experiments.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
+- Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates
+  supported single-agent Agent B scenarios end to end, and
+  `scripts/summarize-c2-suite.js` prints a compact copyable evidence block.
 - Metrics, structured run logs, experiment runner, report skeleton.
 - Baseline harness: `scripts/run-baseline.js` (every strategy × N
   fresh-identity runs against the loaded map) and
@@ -279,6 +316,13 @@ verified at runtime on the challenge server:
 - **Red/green light state messages** are assumed to contain "red light"
   or "green light" (matching the mission agent's shouts); they are parsed
   without the LLM because gating is latency-critical.
+- **Safety-critical pre-apply is conservative and not undone**: the
+  deterministic pre-parse only marks a prohibition when negative keywords
+  (`do not`, `never`, `avoid`, `penalized`, …) or a negative bonus are
+  present, and there is no `unblock`, so a regex false-positive would keep
+  a few tiles blocked until the next mission. This is intentional — for
+  the known templates the regex and LLM agree, and over-blocking a few
+  tiles is far cheaper than a penalty.
 - **Hold duration** for go-to-and-wait missions is a fixed 5 s placeholder
   until the explicit teammate synchronization is implemented.
 - The `tile` event (map edits mid-game) triggers a full graph rebuild —

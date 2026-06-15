@@ -10,6 +10,8 @@ experiments/logs/*
 !experiments/logs/.gitkeep
 experiments/results/*
 !experiments/results/.gitkeep
+experiments/c2-suite/*
+!experiments/c2-suite/.gitkeep
 
 # Logs and OS/editor noise
 *.log

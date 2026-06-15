@@ -49,6 +49,8 @@ node scripts/run-experiment.js --strategy <id> --duration 60 --label <scenario>
 node scripts/run-baseline.js --label 26c1_1 --duration 120 --runs 5   # all strategies vs loaded map
 node scripts/aggregate-results.js --scenario 26c1                     # comparison table (+ --csv)
 node scripts/run-campaign.js --campaign baseline-v1 --maps 26c1_2,26c1_3 --duration 120 --runs 5  # unattended multi-map sweep (starts/stops server per map, per-map resilient)
+node scripts/run-c2-suite.js --campaign c2-smoke-v1 --dry-run          # Challenge 2 Agent B suite plan
+node scripts/summarize-c2-suite.js --campaign c2-smoke-v1              # compact C2 evidence block
 ```
 
 Map is server-side. bash: `cd ../Deliveroo.js/backend && GAME_NAME=26c1_1 npm start`.

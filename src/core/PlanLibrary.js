@@ -99,6 +99,11 @@ export class FollowPathGoTo extends PlanBase {
 
       for (let i = 0; i < path.directions.length; i++) {
         this.assertRunning();
+        const nextTile = path.tiles[i];
+        if (nextTile && beliefs.graph && !beliefs.graph.isWalkable(nextTile.x, nextTile.y)) {
+          metrics?.increment('failedMoves');
+          throw { reason: 'path-invalidated' };
+        }
         const result = await executor.move(path.directions[i]);
 
         if (result === false) {
@@ -216,7 +221,16 @@ export class DeliverCarried extends PlanBase {
     });
     this.assertRunning();
 
+    const carried = beliefs.carried();
+    const { deliverExactly } = beliefs.mission;
+    if (deliverExactly != null && carried.length < deliverExactly) {
+      throw { reason: 'deliver-exactly-not-ready' };
+    }
+
     const requestedIds = this.#selectParcelsForPutdown(beliefs);
+    if (requestedIds === null) {
+      throw { reason: 'deliver-threshold-not-ready' };
+    }
     const dropped = await executor.putdown(requestedIds);
     if (dropped.length === 0) {
       // The server says we held nothing: the carry belief was wrong
@@ -239,7 +253,8 @@ export class DeliverCarried extends PlanBase {
   /**
    * Mission-aware putdown selection. Default: empty list = drop all.
    *  - deliver_exactly_n: drop exactly N (highest value first);
-   *  - deliver_less_value_than: greedy lowest-value subset under the cap.
+   *  - deliver_less_value_than: greedy lowest-value subset under the cap
+   *    (null = no compliant subset yet, so do not put down).
    * TODO(strategy): tune subset choice (e.g. keep high-value parcels
    * carried for a later compliant delivery).
    */
@@ -263,11 +278,12 @@ export class DeliverCarried extends PlanBase {
       let total = 0;
       for (const parcel of sorted) {
         const value = Math.max(beliefs.projectedReward(parcel), 0);
-        if (selected.length > 0 && total + value > deliverMaxValue) break;
+        if (value > deliverMaxValue || total + value > deliverMaxValue) break;
         selected.push(parcel.id);
         total += value;
       }
       if (selected.length > 0) return selected;
+      return null;
     }
 
     return []; // empty list = put down everything
@@ -301,6 +317,10 @@ export class GoToMissionTarget extends PlanBase {
     this.assertRunning();
 
     if (mission.kind === 'deliver_at') {
+      // Give the mission observer a stable frame with agent + parcel on the
+      // target tile before the parcel disappears through putdown.
+      await sleep(500);
+      this.assertRunning();
       const dropped = await executor.putdown();
       if (dropped.length === 0) {
         beliefs.clearCarried(); // carry belief contradicted — reconcile

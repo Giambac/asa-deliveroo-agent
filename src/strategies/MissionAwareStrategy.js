@@ -11,9 +11,10 @@ import { RewardDistanceStrategy } from './RewardDistanceStrategy.js';
  *    parcel income, so missions win whenever they are feasible;
  *  - forbidden tiles / forbidden deliveries: already enforced by the
  *    graph (BeliefBase.setMission blocks them), nothing to do here;
- *  - deliver_exactly_n: deliver as soon as enough parcels are carried
+ *  - deliver_exactly_n: wait until enough parcels are carried, then deliver
  *    (selective putdown is done by the DeliverCarried plan);
- *  - deliver_less_value_than: prefer delivering small batches quickly;
+ *  - deliver_less_value_than: deliver only when at least one carried
+ *    parcel can satisfy the value cap;
  *  - red light: enforced by the ActionExecutor movement gate.
  *
  * TODO(strategy): one_pickup_another_deliver choreography — pick up,
@@ -42,18 +43,20 @@ export class MissionAwareStrategy extends RewardDistanceStrategy {
         const carried = beliefs.carried();
         const { deliverExactly, deliverMaxValue } = beliefs.mission;
 
-        // Each compliant delivery earns a repeatable bonus: deliver as
-        // soon as the policy can be satisfied.
-        if (deliverExactly != null && carried.length >= deliverExactly) {
+        // An exact-N mission penalizes premature deliveries: wait until
+        // the compliant batch size is available.
+        if (deliverExactly != null && carried.length < deliverExactly) {
+          return -Infinity;
+        }
+        if (deliverExactly != null) {
           return base + MissionAwareStrategy.COMPLIANT_DELIVERY_BOOST;
         }
         if (deliverMaxValue != null && carried.length > 0) {
           const cheapest = Math.min(
             ...carried.map((p) => Math.max(beliefs.projectedReward(p), 0)),
           );
-          if (cheapest <= deliverMaxValue) {
-            return base + MissionAwareStrategy.COMPLIANT_DELIVERY_BOOST;
-          }
+          if (cheapest > deliverMaxValue) return -Infinity;
+          return base + MissionAwareStrategy.COMPLIANT_DELIVERY_BOOST;
         }
         return base;
       }

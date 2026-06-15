@@ -7,7 +7,26 @@
 %    low-level movement tool.
 %  - Prompt engineering: the mission-interpretation prompt, schema-
 %    constrained JSON output, validation, and the deterministic fallback.
+%    The fallback covers latency/availability-critical templates such as
+%    JSON coordinate lists, red/green light, arithmetic Q&A, and
+%    value-threshold wording ("lower or equal to", "Threshold is").
 %  - Request handling per Challenge 2 level: atomic requests (Q&A),
 %    strategy adaptation (constraints/policies), coordination missions.
-%  - Latency handling: red/green light parsed without the LLM.
-%  - Failure analysis: invalid LLM outputs caught by validation.
+%    Note the live fixes: deliver_at waits briefly before putdown so the
+%    observer can award the target delivery; deliver_exactly_n suppresses
+%    premature deliveries until the required batch size is carried, with a
+%    final pre-putdown guard for mission updates that arrive mid-intention.
+%    Forbidden-tile updates also invalidate stale paths before movement,
+%    and deliver_less_value_than uses selective under-cap putdown.
+%  - Latency handling: red/green light parsed without the LLM, and
+%    safety-critical constraints (forbidden tiles, light state) are
+%    pre-applied deterministically the instant the message arrives, then
+%    reconciled by the authoritative LLM result. Motivated by a live
+%    finding: with the LLM in the loop, a slow interpretation (8.7 s on
+%    26c2_4) let the agent cross a forbidden tile and take the penalty;
+%    the synchronous pre-apply closes that window while keeping the LLM
+%    the primary interpreter (source=llm). Evidence: campaign
+%    c2-llm-check-v1 (LLM-driven) vs c2-full-v4 (deterministic fallback
+%    when the gateway is unreachable — graceful degradation).
+%  - Failure analysis: invalid LLM outputs caught by validation; LLM
+%    latency variance (1.8--8.7 s observed) handled by the pre-apply.

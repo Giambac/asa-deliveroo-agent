@@ -123,6 +123,19 @@ const uRD = createStrategy('reward-distance').utility(pickP3, beliefs, helpers);
 const uRDT = createStrategy('reward-distance-total').utility(pickP3, beliefs, helpers);
 assert(pickP3 && carriedValue > 0, 'reward-distance-total test: carried value present with a free parcel');
 assert(Math.abs(uRDT - (uRD + carriedValue)) < 1e-9, 'reward-distance-total pickup = reward-distance pickup + carried value');
+beliefs.mission.deliverExactly = 3;
+const exactDelivery = gen.generate(beliefs).find((o) => o.type === 'deliver_carried');
+assert(
+  createStrategy('mission-aware').utility(exactDelivery, beliefs, helpers) === -Infinity,
+  'mission-aware suppresses premature delivery during deliver_exactly_n',
+);
+beliefs.mission.deliverExactly = null;
+beliefs.mission.deliverMaxValue = 10;
+assert(
+  createStrategy('mission-aware').utility(exactDelivery, beliefs, helpers) === -Infinity,
+  'mission-aware suppresses over-threshold delivery during deliver_less_value_than',
+);
+beliefs.mission.deliverMaxValue = null;
 
 // --- Mission fallback parsing ----------------------------------------------------
 const F = MissionInterpreter.fallbackParse;
@@ -132,17 +145,50 @@ assert(F('Go to (19,19) for 1000 points').bonus === 1000, 'bonus extracted');
 assert(F('Drop a package in (1,1) for 1000 pts').kind === 'deliver_at', 'deliver_at parsed');
 const qa = F('Calculate 5*(5+3)/2');
 assert(qa.kind === 'question_answer' && qa.answer === '20', 'arithmetic question answered');
+const qaCourse = F('Calculate (5*(5+3)/2)+2 to get a bonus una tantum. Bonus is 10000pts.');
+assert(qaCourse.kind === 'question_answer' && qaCourse.answer === '22', 'arithmetic question parses course template');
 assert(
   F('Do not go through tiles (13,15) (14,15) or you will be penalized -500 points').forbidden === true,
   'negative mission detected',
 );
+const jsonGoTo = F('Go to one of these coordinates for a bonus. Bonus is 1000pts. Coordinates are [{"x":19,"y":19},{"x":20,"y":19},{"x":21,"y":19}]');
+assert(jsonGoTo.kind === 'go_to' && jsonGoTo.targets.length === 3, 'go_to parses JSON coordinates');
+const jsonDeliverAt = F('Deliver a package in 1,1 to get a 1000pts bonus una tantum. Bonus is 1000pts. Coordinates are [{"x":1,"y":1}].');
+assert(jsonDeliverAt.kind === 'deliver_at' && jsonDeliverAt.targets[0].x === 1, 'deliver_at parses JSON coordinates');
 assert(F('Deliver exactly one package at a time for a bonus').kind === 'deliver_exactly_n', 'deliver_exactly_n parsed');
 assert(
   F('Deliver a total reward of less than 10 to get a bonus').kind === 'deliver_less_value_than',
   'value threshold mission parsed',
 );
+assert(
+  F('Every time you deliver parcels for a total amount of reward lower or equal to 10, you get a bonus. Threshold is 10pts.').threshold === 10,
+  'value threshold mission parses lower-or-equal template',
+);
 assert(MissionInterpreter.parseLightState('RED LIGHT').movementAllowed === false, 'red light gates movement');
+assert(
+  MissionInterpreter.parseLightState('RED LIGHT! Stop moving until the next green light!').movementAllowed === false,
+  'red light shout gates movement even when it mentions green',
+);
 assert(MissionInterpreter.parseLightState('GREEN LIGHT').movementAllowed === true, 'green light opens gate');
+
+// Safety-critical constraints are pre-applied synchronously (before the
+// LLM round-trip) so a slow interpretation cannot incur a penalty.
+assert(
+  MissionInterpreter.isSafetyCritical(F('Do not go through tiles (13,15) (14,15) or you will be penalized')) === true,
+  'forbidden go_to is safety-critical (pre-applied before LLM)',
+);
+assert(
+  MissionInterpreter.isSafetyCritical(F('Do never deliver in (15,32) (16,31) or you will be penalized')) === true,
+  'forbidden deliver_at is safety-critical',
+);
+assert(
+  MissionInterpreter.isSafetyCritical(MissionInterpreter.parseLightState('RED LIGHT! Stop until the next green light!')) === true,
+  'red light is safety-critical',
+);
+assert(
+  MissionInterpreter.isSafetyCritical(F('Go to (19,19) for 1000 points')) === false,
+  'positive go_to is NOT safety-critical (stays LLM-first)',
+);
 
 // --- Mission constraints on the graph ----------------------------------------------
 beliefs.setMission({ kind: 'go_to', forbidden: true, targets: [{ x: 2, y: 1 }] });
@@ -173,6 +219,87 @@ assert(
   goToPlansNoPddl.length === 1 && goToPlansNoPddl[0].name === 'FollowPathGoTo',
   'BFS only when PDDL disabled',
 );
+
+// A path can become invalid while an intention is already executing
+// (e.g. a forbidden-tile mission arrives after the path was computed).
+const stalePathBeliefs = new BeliefBase();
+stalePathBeliefs.loadMap(2, 1, [{ x: 0, y: 0, type: '3' }, { x: 1, y: 0, type: '3' }]);
+stalePathBeliefs.updateMe({ id: 'me1', name: 'tester', x: 0, y: 0, score: 0 });
+stalePathBeliefs.setMission({ kind: 'go_to', forbidden: true, targets: [{ x: 1, y: 0 }] });
+let staleMoveCalled = false;
+let staleReason = null;
+try {
+  await new goToPlansNoPddl[0]({
+    beliefs: stalePathBeliefs,
+    executor: { move: async () => { staleMoveCalled = true; return { x: 1, y: 0 }; } },
+    pathPlanner: { shortestPath: () => ({ directions: ['right'], tiles: [{ x: 1, y: 0 }] }) },
+    metrics: new MetricsCollector(),
+  }).execute({ type: 'go_to', key: 'go_to:1,0', x: 1, y: 0 });
+} catch (err) {
+  staleReason = err?.reason;
+}
+assert(staleReason === 'path-invalidated', 'FollowPathGoTo rejects paths invalidated by new mission constraints');
+assert(!staleMoveCalled, 'FollowPathGoTo does not step onto a newly forbidden tile');
+
+// A mission may arrive while a deliver_carried intention is already
+// walking to a delivery tile. The plan must re-check exact-N just before
+// putdown, otherwise it can complete a newly-forbidden partial delivery.
+const exactBeliefs = new BeliefBase();
+exactBeliefs.loadMap(2, 1, [{ x: 0, y: 0, type: '3' }, { x: 1, y: 0, type: '2' }]);
+exactBeliefs.updateMe({ id: 'me1', name: 'tester', x: 1, y: 0, score: 0 });
+exactBeliefs.parcels.set('e1', { id: 'e1', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+exactBeliefs.parcels.set('e2', { id: 'e2', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+exactBeliefs.mission.deliverExactly = 3;
+const exactPlanner = new PathPlanner(exactBeliefs);
+let putdownCalled = false;
+const exactPlan = lib.plansFor({ type: 'deliver_carried' }, {})[0];
+let exactReason = null;
+try {
+  await new exactPlan({
+    beliefs: exactBeliefs,
+    executor: { putdown: async () => { putdownCalled = true; return [{ id: 'e1' }]; } },
+    pathPlanner: exactPlanner,
+    planLibrary: lib,
+  }).execute();
+} catch (err) {
+  exactReason = err?.reason;
+}
+assert(exactReason === 'deliver-exactly-not-ready', 'DeliverCarried re-checks exact-N before putdown');
+assert(!putdownCalled, 'DeliverCarried does not putdown an under-sized exact-N batch');
+
+const thresholdBeliefs = new BeliefBase();
+thresholdBeliefs.loadMap(2, 1, [{ x: 0, y: 0, type: '3' }, { x: 1, y: 0, type: '2' }]);
+thresholdBeliefs.updateMe({ id: 'me1', name: 'tester', x: 1, y: 0, score: 0 });
+thresholdBeliefs.parcels.set('high', { id: 'high', x: 1, y: 0, reward: 25, rewardAtLastSeen: 25, lastSeen: Date.now(), carriedBy: 'me1' });
+thresholdBeliefs.mission.deliverMaxValue = 10;
+const thresholdPlanner = new PathPlanner(thresholdBeliefs);
+let thresholdPutdownCalled = false;
+const thresholdPlan = lib.plansFor({ type: 'deliver_carried' }, {})[0];
+let thresholdReason = null;
+try {
+  await new thresholdPlan({
+    beliefs: thresholdBeliefs,
+    executor: { putdown: async () => { thresholdPutdownCalled = true; return [{ id: 'high' }]; } },
+    pathPlanner: thresholdPlanner,
+    planLibrary: lib,
+  }).execute();
+} catch (err) {
+  thresholdReason = err?.reason;
+}
+assert(thresholdReason === 'deliver-threshold-not-ready', 'DeliverCarried waits when no parcel is below the value threshold');
+assert(!thresholdPutdownCalled, 'DeliverCarried does not putdown an over-threshold batch');
+
+thresholdBeliefs.parcels.set('low', { id: 'low', x: 1, y: 0, reward: 8, rewardAtLastSeen: 8, lastSeen: Date.now(), carriedBy: 'me1' });
+let requestedThresholdIds = null;
+await new thresholdPlan({
+  beliefs: thresholdBeliefs,
+  executor: { putdown: async (ids) => { requestedThresholdIds = ids; return ids.map((id) => ({ id })); } },
+  pathPlanner: thresholdPlanner,
+  planLibrary: lib,
+  metrics: new MetricsCollector(),
+}).execute();
+assert(JSON.stringify(requestedThresholdIds) === '["low"]', 'DeliverCarried selects only parcels under the value threshold');
+
 const envelope = makeMessage('claim', { parcelId: 'p9' }, 'me1');
 assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol envelope detection');
 

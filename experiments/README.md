@@ -2,6 +2,11 @@
 
 Run outputs live here:
 
+- `c2-suite/` - Challenge 2 orchestration artifacts. Each campaign gets a
+  `run-summary.json` manifest plus per-scenario process logs for the server,
+  Agent B wrapper and mission agent. The Agent B JSONL log itself still lives
+  in `logs/` and is linked from the manifest when available.
+
 - `logs/` — one JSON-lines file per agent per run (`<label>-<role>-<timestamp>.jsonl`).
   Every line is `{t, event, ...payload}`. Events include: `strategy_selected`,
   `score`, `pickup`, `delivery` (both with `count` and normalized `ids` —
@@ -58,6 +63,28 @@ then aggregates by `--scenario <campaign>`. Stop any manual server first:
 node scripts/run-campaign.js --campaign baseline-v1 \
   --maps 26c1_2,26c1_3,26c1_4,26c1_5,26c1_6,26c1_7,26c1_8 --duration 120 --runs 5
 ```
+
+For Agent B / Challenge 2 single-agent validation, use the suite runner
+instead of pasting long terminal scrollback. It starts the server on the
+scenario file (`26c2_X.json`), waits for Agent B's mission interpreter,
+starts the matching mission agent, records reward/penalty evidence and
+continues scenario by scenario:
+
+```bash
+node scripts/run-c2-suite.js --campaign c2-smoke-v1 --dry-run
+node scripts/run-c2-suite.js --campaign c2-smoke-v1 --scenarios 26c2_3,26c2_1,26c2_2,26c2_5,26c2_7
+node scripts/summarize-c2-suite.js --campaign c2-smoke-v1
+```
+
+Prerequisites: VPN connected for the LiteLLM gateway, no manual server
+already running on the target port, and `../DeliverooAgent.js/.env`
+containing `HOST=http://localhost:8080` plus `ADMIN_TOKEN=<god-token>` so
+the mission agents can observe the whole map. The current runner covers
+the supported single-agent scenarios (`26c2_1`, `26c2_2`, `26c2_3`,
+`26c2_4`, `26c2_5`, `26c2_6`, `26c2_7`, `26c2_9`); team scenarios remain
+manual until the two-agent coordination flow is validated.
+Reward/penalty evidence is matched only against actual mission-agent
+acknowledgement lines (`Rewarded ...`, `Penalized ...`), not prompt text.
 
 ## Comparing strategies
 
