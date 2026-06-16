@@ -33,6 +33,15 @@ export class BeliefBase {
   config = null;
 
   /**
+   * Fixed handover role for the one_pickup_another_deliver mission, set by
+   * the runtime: 'picker' (Agent A / BDI collects) or 'deliverer'
+   * (Agent B / LLM delivers). Explicit and deterministic, so the two
+   * agents never both pick or both deliver.
+   * @type {'picker'|'deliverer'|null}
+   */
+  handoverRole = null;
+
+  /**
    * Mission state, written by the LLM interpreter (Agent B) or received
    * from the teammate via mission-update messages (Agent A).
    */
@@ -263,9 +272,17 @@ export class BeliefBase {
         this.mission.deliverMaxValue = mission.threshold ?? null;
         return;
       case 'one_pickup_another_deliver':
-        // TODO(strategy): full handover choreography (rendezvous tile
-        // negotiation, putdown-before-pickup sequencing via ask/ack).
-        this.mission.handover = { mission, state: 'pending' };
+        // Data layer (Fetta 2): role + shared rendezvous + state slots.
+        // The executable choreography (deposit/collect plans, message
+        // sequencing) is added on top in a later step.
+        this.mission.handover = {
+          active: true,
+          role: this.handoverRole,            // 'picker' | 'deliverer' | null
+          rendezvous: this.graph?.rendezvousTile() ?? null,
+          parcel: null,                       // {id, x, y} of the handed-over parcel
+          myState: 'idle',                    // this agent's progress (driven later)
+          peerState: null,                    // teammate's last reported progress
+        };
         return;
       case 'red_light_green_light':
         // Rules announcement only; actual gating arrives as light_state.
@@ -284,5 +301,42 @@ export class BeliefBase {
   completeMission() {
     this.mission.lastCompleted = this.mission.active;
     this.mission.active = null;
+  }
+
+  /**
+   * Revise the handover state from a teammate HANDOVER message.
+   *
+   * Robustness: the drop is located by **coordinates first**. The
+   * parcelId is only a hint — pickup/putdown acks omit ids on this server
+   * (see normalizeIdList), so a teammate may not know the id, and ids do
+   * not survive a drop+repickup cleanly. Coordinates always identify the
+   * tile to collect from, so they never get overwritten by a missing id.
+   *
+   * @param {{state?:string, parcelId?:string, x?:number, y?:number}} payload
+   * @returns {object} the updated handover belief
+   */
+  applyHandoverUpdate(payload = {}) {
+    const h =
+      this.mission.handover ??
+      (this.mission.handover = {
+        active: true,
+        role: this.handoverRole,
+        rendezvous: this.graph?.rendezvousTile() ?? null,
+        parcel: null,
+        myState: 'idle',
+        peerState: null,
+      });
+
+    if (payload.state) h.peerState = payload.state;
+
+    if (Number.isFinite(payload.x) && Number.isFinite(payload.y)) {
+      // Coordinates present: authoritative locator (id is a best-effort hint).
+      h.parcel = { id: payload.parcelId ?? h.parcel?.id ?? null, x: payload.x, y: payload.y };
+    } else if (payload.parcelId != null) {
+      // Only an id arrived: keep any coordinates we already had.
+      h.parcel = { id: payload.parcelId, x: h.parcel?.x ?? null, y: h.parcel?.y ?? null };
+    }
+
+    return h;
   }
 }

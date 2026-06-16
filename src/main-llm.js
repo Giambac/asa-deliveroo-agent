@@ -13,7 +13,9 @@ import { isProtocolMessage } from './communication/MessageTypes.js';
  * Architecture: the SAME deterministic BDI runtime as Agent A (it must
  * still move, collect and deliver), plus a high-level LLM layer that:
  *  - interprets mission-agent messages into structured missions
- *    (LLM when configured, deterministic fallback otherwise);
+ *    (LLM when configured, deterministic fallback otherwise), while
+ *    pre-applying safety-critical constraints (prohibitions, red light)
+ *    immediately so a slow LLM round-trip cannot incur a penalty;
  *  - answers pure-reasoning missions (question_answer) via chat;
  *  - applies missions to its own beliefs (strategy constraints/goals);
  *  - forwards missions to Agent A through the team protocol.
@@ -49,6 +51,20 @@ export async function startLlmAgent(overrides = {}) {
     if (id === beliefs.me.id) return;
 
     const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
+
+    // Latency-critical safety: the LLM round-trip can take seconds (8.7 s
+    // observed live), and a pending prohibition must not be ignored while
+    // interpreting — otherwise the agent keeps farming and can cross a
+    // forbidden tile / move on red. Deterministically pre-apply the few
+    // safety-critical constraints NOW; the authoritative LLM mission below
+    // reconciles (setMission is idempotent for these).
+    const provisional = MissionInterpreter.parseLightState(text)
+      ?? MissionInterpreter.fallbackParse(text);
+    if (MissionInterpreter.isSafetyCritical(provisional)) {
+      beliefs.setMission(provisional);
+      logger.log('mission_preapplied', { kind: provisional.kind, forbidden: !!provisional.forbidden });
+    }
+
     const mission = await interpreter.interpret(text, id);
 
     if (mission.kind === 'unknown') return;

@@ -171,6 +171,43 @@ export class GridGraph {
   }
 
   /**
+   * Deterministic handover rendezvous: a walkable, non-delivery,
+   * non-blocked tile one step from a delivery tile (min delivery
+   * distance), tie-broken toward the map center then by key — so both
+   * agents, computing from the same static map, agree on the same tile
+   * without any negotiation. The deliverer reaches a delivery tile in one
+   * move from here, minimizing carried-decay after the handover.
+   * @returns {{x:number, y:number}|null} the rendezvous, or null if none
+   */
+  rendezvousTile() {
+    const cx = (this.width - 1) / 2;
+    const cy = (this.height - 1) / 2;
+    let best = null;
+    let bestDd = Infinity;
+    let bestCenter = Infinity;
+    let bestKey = null;
+    for (const tile of this.tiles.values()) {
+      if (!tile.walkable || tile.delivery) continue;
+      const key = keyOf(tile.x, tile.y);
+      if (this.#blocked.has(key)) continue;
+      const dd = this.deliveryDistance(tile.x, tile.y);
+      if (!Number.isFinite(dd) || dd === 0) continue; // unreachable to / on a delivery
+      const center = Math.abs(tile.x - cx) + Math.abs(tile.y - cy);
+      if (
+        dd < bestDd ||
+        (dd === bestDd && center < bestCenter) ||
+        (dd === bestDd && center === bestCenter && (bestKey === null || key < bestKey))
+      ) {
+        best = { x: tile.x, y: tile.y };
+        bestDd = dd;
+        bestCenter = center;
+        bestKey = key;
+      }
+    }
+    return best;
+  }
+
+  /**
    * Exact path distance from (x,y) to the nearest allowed delivery tile,
    * or Infinity when unreachable. O(1) lookup, precomputed by a
    * multi-source BFS on REVERSED edges (correct on the digraph).

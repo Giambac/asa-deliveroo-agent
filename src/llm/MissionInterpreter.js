@@ -94,6 +94,7 @@ export class MissionInterpreter {
       answer: obj.answer != null ? String(obj.answer) : null,
       holdAtTarget: obj.holdAtTarget === true,
       movementAllowed: typeof obj.movementAllowed === 'boolean' ? obj.movementAllowed : null,
+      tolerance: Number.isFinite(Number(obj.tolerance)) ? Number(obj.tolerance) : null,
     };
   }
 
@@ -101,9 +102,37 @@ export class MissionInterpreter {
   // Deterministic fallback parsing (Challenge 2 mission catalog)
   // -------------------------------------------------------------------------
 
+  /**
+   * A constraint that must take effect the instant the message arrives,
+   * before any (possibly multi-second) LLM round-trip — otherwise a
+   * pending prohibition or red light is ignored while interpreting, and
+   * the agent can incur a penalty (observed live: an 8.7 s interpretation
+   * let the agent cross a forbidden tile). The caller pre-applies these
+   * deterministically, then lets the LLM result reconcile (setMission is
+   * idempotent for blockTiles / forbidden-deliveries / the light gate).
+   * @param {object} mission a deterministically-parsed mission
+   * @returns {boolean}
+   */
+  static isSafetyCritical(mission) {
+    if (!mission) return false;
+    if (mission.kind === 'light_state') return true;
+    if ((mission.kind === 'go_to' || mission.kind === 'deliver_at') && mission.forbidden === true) {
+      return true;
+    }
+    return false;
+  }
+
   /** "RED LIGHT" / "GREEN LIGHT" state switches. */
   static parseLightState(text) {
     const lower = String(text).toLowerCase().trim();
+    // State shouts can mention the opposite color ("until the next green
+    // light"), so prefix beats whole-message color co-occurrence.
+    if (/^red\s*light\b/.test(lower)) {
+      return { kind: 'light_state', movementAllowed: false };
+    }
+    if (/^green\s*light\b/.test(lower)) {
+      return { kind: 'light_state', movementAllowed: true };
+    }
     // A pure state message is short; the rules announcement mentions both
     // colors and is handled as red_light_green_light by fallbackParse.
     if (/red\s*light/.test(lower) && !/green\s*light/.test(lower)) {
@@ -120,8 +149,11 @@ export class MissionInterpreter {
     const raw = String(text);
     const lower = raw.toLowerCase();
 
-    const targets = [...raw.matchAll(/\(\s*(\d+)\s*,\s*(\d+)\s*\)/g)]
+    const parenTargets = [...raw.matchAll(/\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)/g)]
       .map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    const jsonTargets = [...raw.matchAll(/["']?x["']?\s*:\s*(-?\d+)\s*,\s*["']?y["']?\s*:\s*(-?\d+)/gi)]
+      .map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+    const targets = [...new Map([...parenTargets, ...jsonTargets].map((t) => [`${t.x},${t.y}`, t])).values()];
 
     const bonusMatch =
       raw.match(/(-?\d+)\s*(?:pts|points?|punti)/i) ?? raw.match(/bonus[^-\d]*(-?\d+)/i);
@@ -130,9 +162,20 @@ export class MissionInterpreter {
     const negative =
       /\b(do not|don't|never|avoid|forbidden|penali[sz]ed?)\b/.test(lower) || (bonus ?? 0) < 0;
 
+    // Neighbourhood radius for go-to-and-wait missions ("within a maximum
+    // distance of 3"). The agent must reach a tile within this Manhattan
+    // distance of the target, not the exact target (two agents cannot
+    // share a tile).
+    const toleranceMatch =
+      lower.match(/within\s+(?:a\s+)?(?:maximum\s+|max\s+)?distance\s+(?:of\s+)?(\d+)/) ??
+      lower.match(/distance\s+(?:of\s+)?(\d+)/) ??
+      lower.match(/within\s+(\d+)\s*tiles?/);
+    const tolerance = toleranceMatch ? Number(toleranceMatch[1]) : null;
+
     const base = {
       targets, bonus, forbidden: false, count: null, threshold: null,
       expression: null, answer: null, holdAtTarget: false, movementAllowed: null,
+      tolerance,
     };
 
     // Rules announcement of the red/green light game.
@@ -142,8 +185,7 @@ export class MissionInterpreter {
 
     // Pure reasoning request (26c2_3): compute the answer locally.
     if (/\b(calculate|compute|how much is|what is)\b/.test(lower)) {
-      const exprMatch = raw.match(/[\d][\d\s+\-*/().]*/);
-      const expression = exprMatch ? exprMatch[0].trim() : null;
+      const expression = MissionInterpreter.extractArithmeticExpression(raw);
       return {
         ...base,
         kind: 'question_answer',
@@ -160,8 +202,12 @@ export class MissionInterpreter {
     }
 
     const thresholdMatch = lower.match(/(?:≤|<=|less than|at most|no more than)\s*(\d+)/);
-    if (thresholdMatch && /deliver/.test(lower)) {
-      return { ...base, kind: 'deliver_less_value_than', threshold: Number(thresholdMatch[1]) };
+    const thresholdTemplateMatch =
+      lower.match(/(?:less or equal to|lower than|lower or equal to)\s*(\d+)/) ??
+      lower.match(/threshold\s*(?:is|=|:)?\s*(\d+)/);
+    const effectiveThresholdMatch = thresholdMatch ?? thresholdTemplateMatch;
+    if (effectiveThresholdMatch && /deliver/.test(lower)) {
+      return { ...base, kind: 'deliver_less_value_than', threshold: Number(effectiveThresholdMatch[1]) };
     }
 
     if (/picked?(?:\s+up)?\s+(?:first\s+)?by\s+(?:one|an?)\s+agent.*deliver|one agent.*deliver.*(?:other|another)/.test(lower)) {
@@ -199,5 +245,16 @@ export class MissionInterpreter {
     } catch {
       return null;
     }
+  }
+
+  static extractArithmeticExpression(text) {
+    const afterCommand = String(text)
+      .replace(/^\s*(calculate|compute|how much is|what is)\s*/i, '');
+    const head = afterCommand.split(/\b(?:to get|reply|receive|bonus|points?|pts|punti|una tantum)\b/i)[0];
+    const candidates = head
+      .match(/[()\d\s+*/.-]+/g)
+      ?.map((part) => part.trim())
+      .filter((part) => /\d/.test(part)) ?? [];
+    return candidates.sort((a, b) => b.length - a.length)[0] ?? null;
   }
 }

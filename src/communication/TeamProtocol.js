@@ -99,6 +99,16 @@ export class TeamProtocol {
     return this.send(MessageTypes.MISSION_UPDATE, { mission });
   }
 
+  /**
+   * Signal a handover step to the teammate. Coordinates are the robust
+   * locator of the drop (parcelId is a best-effort hint — see
+   * BeliefBase.applyHandoverUpdate).
+   * @param {{state:string, parcelId?:string|null, x?:number, y?:number}} payload
+   */
+  sendHandover(payload = {}) {
+    return this.send(MessageTypes.HANDOVER, payload);
+  }
+
   async #shout(type, payload) {
     this.metrics?.increment('messagesSent');
     return this.socket.emitShout(makeMessage(type, payload, this.beliefs.me.id));
@@ -123,6 +133,7 @@ export class TeamProtocol {
         const isNew = this.beliefs.teammate.id !== id;
         this.beliefs.teammate.id = id;
         this.beliefs.teammate.name = msg.payload?.name ?? name;
+        if (isNew) this.logger?.log('teammate_discovered', { id, name: this.beliefs.teammate.name });
         if (isNew && !msg.payload?.isReply) {
           this.send(MessageTypes.HELLO, { name: this.beliefs.me.name, isReply: true });
         }
@@ -164,9 +175,16 @@ export class TeamProtocol {
         return;
       }
       case MessageTypes.HANDOVER: {
-        // TODO(strategy): full choreography — agree on a rendezvous
-        // tile, sequence putdown-before-pickup via askTeammate.
-        this.beliefs.mission.handover = { ...msg.payload, from: id, state: 'requested' };
+        // Revise the handover belief (belief logic lives in BeliefBase).
+        // Coordinates locate the drop; parcelId is only a hint.
+        this.beliefs.applyHandoverUpdate(msg.payload ?? {});
+        this.logger?.log('handover_msg', {
+          from: id,
+          state: msg.payload?.state ?? null,
+          parcelId: msg.payload?.parcelId ?? null,
+          x: msg.payload?.x ?? null,
+          y: msg.payload?.y ?? null,
+        });
         this.#acknowledge(MessageTypes.HANDOVER, reply);
         return;
       }

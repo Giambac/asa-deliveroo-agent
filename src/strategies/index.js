@@ -1,5 +1,6 @@
 import { GreedyNearestStrategy } from './GreedyNearestStrategy.js';
 import { RewardDistanceStrategy } from './RewardDistanceStrategy.js';
+import { RewardDistanceTotalStrategy } from './RewardDistanceTotalStrategy.js';
 import { DeliveryThresholdStrategy } from './DeliveryThresholdStrategy.js';
 import { MissionAwareStrategy } from './MissionAwareStrategy.js';
 
@@ -11,6 +12,7 @@ import { MissionAwareStrategy } from './MissionAwareStrategy.js';
 const STRATEGY_CLASSES = [
   GreedyNearestStrategy,
   RewardDistanceStrategy,
+  RewardDistanceTotalStrategy,
   DeliveryThresholdStrategy,
   MissionAwareStrategy,
 ];
