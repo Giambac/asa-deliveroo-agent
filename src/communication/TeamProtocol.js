@@ -99,6 +99,16 @@ export class TeamProtocol {
     return this.send(MessageTypes.MISSION_UPDATE, { mission });
   }
 
+  /**
+   * Signal a handover step to the teammate. Coordinates are the robust
+   * locator of the drop (parcelId is a best-effort hint — see
+   * BeliefBase.applyHandoverUpdate).
+   * @param {{state:string, parcelId?:string|null, x?:number, y?:number}} payload
+   */
+  sendHandover(payload = {}) {
+    return this.send(MessageTypes.HANDOVER, payload);
+  }
+
   async #shout(type, payload) {
     this.metrics?.increment('messagesSent');
     return this.socket.emitShout(makeMessage(type, payload, this.beliefs.me.id));

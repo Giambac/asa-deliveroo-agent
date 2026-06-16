@@ -346,6 +346,72 @@ export class GoToMissionTarget extends PlanBase {
   }
 }
 
+/**
+ * Picker side of the one_pickup_another_deliver handover (26c2_8): carry
+ * the held parcel to the shared rendezvous, drop it on that (non-delivery)
+ * tile so it stays on the ground, step off to free the tile for the
+ * deliverer, then signal the drop (coordinates are the robust locator).
+ * The deliverer-side collect/deliver is a separate plan.
+ */
+export class HandoverDeposit extends PlanBase {
+  static isApplicableTo(option) {
+    return option.type === 'handover_deposit';
+  }
+
+  async execute(option) {
+    const { beliefs, executor, protocol, metrics, logger } = this.context;
+    const handover = beliefs.mission.handover;
+    if (!handover?.active || handover.role !== 'picker') throw { reason: 'not-picker' };
+    const r = option.rendezvous ?? handover.rendezvous;
+    if (!r) throw { reason: 'no-rendezvous' };
+    if (beliefs.carried().length === 0) throw { reason: 'nothing-to-hand-over' };
+
+    // 1. carry the parcel to the rendezvous tile
+    await this.subIntention({ type: 'go_to', key: `go_to:${r.x},${r.y}`, x: r.x, y: r.y });
+    this.assertRunning();
+
+    // 2. drop on the rendezvous (non-delivery -> the parcel stays free)
+    const carriedIds = beliefs.carried().map((p) => p.id);
+    const dropped = await executor.putdown();
+    if (dropped.length === 0) {
+      beliefs.clearCarried(); // carry belief contradicted — reconcile
+      throw { reason: 'deposit-empty' };
+    }
+    const droppedIds = normalizeIdList(dropped);
+    beliefs.markDropped(droppedIds.length > 0 ? droppedIds : carriedIds);
+    const parcelId = droppedIds[0] ?? carriedIds[0] ?? null;
+
+    // 3. free the rendezvous tile so the deliverer can step onto it. Two
+    // agents cannot share a tile, so if we cannot vacate we must NOT
+    // signal — otherwise the deliverer would head for a tile we block.
+    // Try every neighbour (a single exit may be transiently occupied).
+    let freed = false;
+    for (const exit of beliefs.graph?.neighbors(r.x, r.y) ?? []) {
+      const moved = await executor.move(exit.direction);
+      if (moved !== false) {
+        beliefs.me.x = moved.x;
+        beliefs.me.y = moved.y;
+        freed = true;
+        break;
+      }
+    }
+    if (!freed) {
+      metrics?.increment('handoverExitBlocked');
+      logger?.log('handover_exit_blocked', { x: r.x, y: r.y, parcelId });
+      throw { reason: 'handover-exit-blocked' };
+    }
+
+    // 4. record + signal the drop (coordinates locate it; id is a hint)
+    handover.parcel = { id: parcelId, x: r.x, y: r.y };
+    handover.myState = 'dropped';
+    await protocol?.sendHandover({ state: 'dropped', parcelId, x: r.x, y: r.y });
+
+    metrics?.increment('handoverDeposits');
+    logger?.log('handover_deposit', { x: r.x, y: r.y, parcelId, count: dropped.length });
+    return true;
+  }
+}
+
 export class Explore extends PlanBase {
   static isApplicableTo(option) {
     return option.type === 'explore';
@@ -404,6 +470,7 @@ export function buildDefaultPlanLibrary() {
   library.register(GoPickUp);
   library.register(DeliverCarried);
   library.register(GoToMissionTarget);
+  library.register(HandoverDeposit);
   library.register(Explore);
   library.register(Wait);
   library.register(PddlGoTo); // applicability self-checks pddl enablement

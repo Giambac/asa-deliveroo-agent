@@ -263,12 +263,19 @@ interpretations, protocol messages) and — when stopped via
 - Team protocol: discovery (logged `teammate_discovered`), position
   heartbeat, claims, mission updates, acks; validated tool registry for
   LLM tool-loop experiments.
-- Handover data layer (26c2_8, level 3 in progress): explicit roles
-  (Agent A picks up, Agent B delivers), a map-derived deterministic
-  rendezvous tile both agents agree on without negotiating, and a
-  coordinate-first handover belief (the drop is located by coordinates;
-  the parcel id is only a hint). The executable choreography
-  (deposit/collect plans + message sequencing) is the next step.
+- Handover (26c2_8, level 3 in progress): explicit roles (Agent A picks
+  up, Agent B delivers), a map-derived deterministic rendezvous both
+  agents agree on without negotiating, and a coordinate-first handover
+  belief (the drop is located by coordinates; the parcel id is only a
+  hint). Picker side is **implemented and validated live**: once carrying,
+  Agent A brings the parcel to the rendezvous, drops it on that
+  non-delivery tile, steps off to free it, and signals the drop to the
+  teammate (logged `handover_deposit`) — **only after it has actually
+  vacated the tile** (else `handover-exit-blocked`, no signal, so the
+  deliverer is never sent to a tile the picker still blocks). It never
+  re-grabs its own drop.
+  The deliverer side (collect at the rendezvous and deliver) is the next
+  step.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
 - Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates

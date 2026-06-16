@@ -83,6 +83,9 @@ export async function buildAgentRuntime(config, role = 'bdi') {
     heartbeatMs: config.agent.heartbeatMs,
   });
 
+  // Plans need the protocol to signal the teammate (e.g. handover drop).
+  planContext.protocol = protocol;
+
   // Announce pickup targets to the teammate (first claim wins).
   revision.onIntentionChange = (intention) => {
     if (intention.option.type === 'go_pick_up') {

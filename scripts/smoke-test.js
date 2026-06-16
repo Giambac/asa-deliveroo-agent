@@ -338,6 +338,67 @@ assert(
   'handover locates the drop by coordinates even without a parcelId',
 );
 
+// Picker side (Fetta 3 step A): carrying a parcel under an active handover
+// generates a deposit option, the strategy commits to it, and the picker
+// is barred from self-delivering (no bonus when one agent does both).
+const pick = new BeliefBase();
+pick.loadMap(4, 3, tiles);
+pick.updateMe({ id: 'me1', name: 'agentA', x: 0, y: 0, score: 0 });
+pick.updateConfig({ CLOCK: 50, GAME: { parcels: { decaying_event: '1s' }, player: { movement_duration: 100 } } });
+pick.handoverRole = 'picker';
+pick.setMission({ kind: 'one_pickup_another_deliver' });
+pick.parcels.set('hp', { id: 'hp', x: 0, y: 0, reward: 30, rewardAtLastSeen: 30, lastSeen: Date.now(), carriedBy: 'me1' });
+const pickPlanner = new PathPlanner(pick);
+const pickHelpers = pickPlanner.scoringHelpers();
+const pickOpts = new OptionGenerator().generate(pick);
+const depOpt = pickOpts.find((o) => o.type === 'handover_deposit');
+assert(!!depOpt, 'picker carrying a parcel generates a handover_deposit option');
+const ma = createStrategy('mission-aware');
+assert(Number.isFinite(ma.utility(depOpt, pick, pickHelpers)), 'handover_deposit has a finite utility for the picker');
+assert(
+  ma.utility({ type: 'deliver_carried', key: 'deliver_carried' }, pick, pickHelpers) === -Infinity,
+  'picker is barred from self-delivering during a handover',
+);
+const depPlan = lib.plansFor({ type: 'handover_deposit' }, {})[0];
+assert(depPlan && depPlan.name === 'HandoverDeposit', 'HandoverDeposit plan serves handover_deposit');
+
+// The picker must not re-grab a parcel it dropped at the rendezvous (that
+// drop is reserved for the deliverer) — otherwise it loops on its own drop.
+const rvTile = pick.mission.handover.rendezvous;
+pick.parcels.set('atRv', { id: 'atRv', x: rvTile.x, y: rvTile.y, reward: 30, rewardAtLastSeen: 30, lastSeen: Date.now(), carriedBy: null });
+const optsWithRvDrop = new OptionGenerator().generate(pick);
+assert(
+  !optsWithRvDrop.some((o) => o.type === 'go_pick_up' && o.parcelId === 'atRv'),
+  'picker ignores parcels sitting on the rendezvous tile',
+);
+
+// Safety: the picker must NOT signal the drop if it cannot vacate the
+// rendezvous (two agents cannot share a tile — the deliverer would head
+// for a tile the picker still blocks).
+const blk = new BeliefBase();
+blk.loadMap(4, 3, tiles);
+blk.handoverRole = 'picker';
+blk.setMission({ kind: 'one_pickup_another_deliver' });
+const rrv = blk.mission.handover.rendezvous;
+blk.updateMe({ id: 'me1', name: 'agentA', x: rrv.x, y: rrv.y, score: 0 });
+blk.parcels.set('hd', { id: 'hd', x: rrv.x, y: rrv.y, reward: 30, rewardAtLastSeen: 30, lastSeen: Date.now(), carriedBy: 'me1' });
+let handoverSignalled = false;
+let depReason = null;
+try {
+  await new (lib.plansFor({ type: 'handover_deposit' }, {})[0])({
+    beliefs: blk,
+    executor: { putdown: async () => [{ id: 'hd' }], move: async () => false },
+    protocol: { sendHandover: async () => { handoverSignalled = true; } },
+    pathPlanner: new PathPlanner(blk),
+    planLibrary: lib,
+    metrics: new MetricsCollector(),
+  }).execute({ type: 'handover_deposit', key: 'handover_deposit', rendezvous: rrv });
+} catch (err) {
+  depReason = err?.reason;
+}
+assert(depReason === 'handover-exit-blocked', 'HandoverDeposit aborts when it cannot free the rendezvous');
+assert(!handoverSignalled, 'HandoverDeposit does not signal the drop while the rendezvous stays blocked');
+
 // --- Ack normalization + belief reconciliation (live-observed server quirk) -----
 assert(
   JSON.stringify(normalizeIdList([{ id: 'a' }, 'b', { parcelId: 'c' }, {}, null])) === '["a","b","c"]',

@@ -21,6 +21,12 @@
 %    tie-broken to centre then key) so both agents agree with no
 %    negotiation; a coordinate-first handover belief (the drop is located
 %    by coordinates, the parcel id is only a hint — acks omit ids and ids
-%    do not survive drop+repickup). Choreography (deposit/collect plans +
-%    message sequencing) is the remaining step.
+%    do not survive drop+repickup). Picker side done + validated live: the
+%    HandoverDeposit plan carries to the rendezvous, drops, steps off to
+%    free the tile, and signals the drop (handover_deposit log) only after
+%    actually vacating it (else handover-exit-blocked, no signal — never
+%    send the deliverer to a tile the picker still blocks); the
+%    strategy bars the picker from self-delivering and the option
+%    generator stops it re-grabbing its own drop. Deliverer side (collect
+%    + deliver) is the remaining step.
 %  - Metrics: messages sent/received, claim conflicts avoided.
