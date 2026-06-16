@@ -308,7 +308,11 @@ interpretations, protocol messages) and — when stopped via
   problems for BFS-vs-PDDL experiments. When both `PDDL_ENABLED=true` and
   `PDDL_DELIVERY_ENABLED=true`, the plan library tries this full PDDL
   pickup-and-deliver plan before the normal BDI pickup plan, with fallback
-  on failure. PDDL calls are bounded by `PDDL_MAX_TILES` and
+  on failure. This delivery plan is mission-safe: it defers to the dedicated
+  BDI mission plans whenever a delivery/positional mission constraint is
+  active, and its putdown reuses the same compliant-subset selection as
+  `DeliverCarried`, so it never drops a non-compliant batch — it is off by
+  default for performance, not correctness. PDDL calls are bounded by `PDDL_MAX_TILES` and
   `PDDL_TIMEOUT_MS`, and `PddlGoTo` is gated by
   `PDDL_MIN_PATH_LENGTH` / `PDDL_AVOID_WHILE_CARRYING`, so short paths
   and urgent delivery paths go straight to BFS.

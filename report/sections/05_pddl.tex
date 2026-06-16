@@ -105,7 +105,12 @@ set, so it stays within the same complexity class while letting the planner
 sequence pickup, routing and putdown together. Mission constraints
 (deliver-exactly-$N$, value thresholds) are intentionally \emph{not} pushed into
 PDDL: they are enforced by the BDI plans (Section~\ref{sec:bdi}), which keeps the
-symbolic model simple and avoids regenerating problems as missions change.
+symbolic model simple and avoids regenerating problems as missions change. The
+PDDL delivery plan stays \emph{mission-safe} by deferring to those BDI plans
+whenever a mission constraint is active, rather than trying to satisfy every
+mission type itself; as a guard it also reuses their compliant-subset putdown
+selection, so it can never drop a non-compliant batch. It is therefore disabled
+by default for latency, not for correctness.
 
 \paragraph{Scope and future work.} Crate-pushing and dynamic-obstacle variants
 (the Sokoban-style maps) are out of scope: the agent assumes a static known map

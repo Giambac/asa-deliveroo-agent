@@ -216,15 +216,71 @@ export class GoPickUp extends PlanBase {
 }
 
 /**
+ * Mission-aware putdown selection (shared by the BDI and PDDL delivery
+ * plans so both enforce the same safety). Default: empty list = drop all.
+ *  - deliver_exactly_n: drop exactly N (highest value first);
+ *  - deliver_less_value_than: greedy lowest-value subset under the cap
+ *    (null = no compliant subset yet, so do not put down).
+ * TODO(strategy): tune subset choice (e.g. keep high-value parcels
+ * carried for a later compliant delivery).
+ */
+export function selectParcelsForPutdown(beliefs) {
+  const carried = beliefs.carried();
+  const { deliverExactly, deliverMaxValue } = beliefs.mission;
+
+  if (deliverExactly != null && carried.length > deliverExactly) {
+    return carried
+      .slice()
+      .sort((a, b) => beliefs.projectedReward(b) - beliefs.projectedReward(a))
+      .slice(0, deliverExactly)
+      .map((p) => p.id);
+  }
+
+  if (deliverMaxValue != null) {
+    const sorted = carried
+      .slice()
+      .sort((a, b) => beliefs.projectedReward(a) - beliefs.projectedReward(b));
+    const selected = [];
+    let total = 0;
+    for (const parcel of sorted) {
+      const value = Math.max(beliefs.projectedReward(parcel), 0);
+      if (value > deliverMaxValue || total + value > deliverMaxValue) break;
+      selected.push(parcel.id);
+      total += value;
+    }
+    if (selected.length > 0) return selected;
+    return null;
+  }
+
+  return []; // empty list = put down everything
+}
+
+/**
  * Optional full-task PDDL plan: solve "go to parcel, pick it up, go to a
  * delivery tile, put it down" as one symbolic task. This is deliberately
  * gated by `PDDL_DELIVERY_ENABLED`: it is useful for PDDL experiments,
  * while the normal BDI decomposition remains the default low-latency path.
+ *
+ * Mission-safe by construction: it does not activate while a delivery /
+ * positional mission constraint is in force (those are served by the
+ * dedicated BDI mission plans), and its putdown step reuses the same
+ * `selectParcelsForPutdown` guard as `DeliverCarried`, so it can never
+ * drop a non-compliant batch.
  */
 export class PddlPickUpAndDeliver extends PlanBase {
   static isApplicableTo(option, context) {
-    return option.type === 'go_pick_up' &&
-      !!context?.pddlPlanner?.isDeliveryEnabled?.();
+    if (option.type !== 'go_pick_up' || !context?.pddlPlanner?.isDeliveryEnabled?.()) {
+      return false;
+    }
+    // Defer to the dedicated BDI mission plans whenever a mission
+    // constraint is active: the single-parcel PDDL task cannot honour
+    // multi-parcel exact-N / threshold / positional / handover missions.
+    const m = context?.beliefs?.mission;
+    if (m && (m.deliverExactly != null || m.deliverMaxValue != null
+              || m.active != null || m.handover?.active === true)) {
+      return false;
+    }
+    return true;
   }
 
   async execute(option) {
@@ -267,13 +323,31 @@ export class PddlPickUpAndDeliver extends PlanBase {
         if (!picked && beliefs.carried().length === 0) {
           throw { reason: 'pddl-delivery-putdown-before-pickup' };
         }
-        const dropped = await executor.putdown();
+        // Defense-in-depth: reuse the BDI mission-safety selection so a
+        // PDDL delivery can never drop a non-compliant batch. With no
+        // mission this is [] (drop all) — same as before. On a constraint
+        // it cannot satisfy, abort so the normal plans take over.
+        const mission = beliefs.mission;
+        // The applicability gate only covers plan start; a positional /
+        // handover mission may arrive WHILE this plan runs, so re-check here.
+        if (mission.active != null || mission.handover?.active === true) {
+          throw { reason: 'pddl-delivery-mission-active' };
+        }
+        if (mission.deliverExactly != null && beliefs.carried().length < mission.deliverExactly) {
+          throw { reason: 'pddl-delivery-exactly-not-ready' };
+        }
+        const requestedIds = selectParcelsForPutdown(beliefs);
+        if (requestedIds === null) {
+          throw { reason: 'pddl-delivery-threshold-not-ready' };
+        }
+        const dropped = await executor.putdown(requestedIds);
         if (dropped.length === 0) {
           beliefs.clearCarried();
           throw { reason: 'pddl-delivery-putdown-empty' };
         }
         const ids = normalizeIdList(dropped);
         if (ids.length > 0) beliefs.markDelivered(ids);
+        else if (requestedIds.length > 0) beliefs.markDelivered(requestedIds);
         else beliefs.clearCarried();
         metrics?.increment('parcelsDelivered', dropped.length);
         logger?.log('delivery', { count: dropped.length, ids, via: 'pddl_delivery' });
@@ -312,7 +386,7 @@ export class DeliverCarried extends PlanBase {
       throw { reason: 'deliver-exactly-not-ready' };
     }
 
-    const requestedIds = this.#selectParcelsForPutdown(beliefs);
+    const requestedIds = selectParcelsForPutdown(beliefs);
     if (requestedIds === null) {
       throw { reason: 'deliver-threshold-not-ready' };
     }
@@ -333,45 +407,6 @@ export class DeliverCarried extends PlanBase {
     metrics?.increment('parcelsDelivered', dropped.length);
     logger?.log('delivery', { count: dropped.length, ids: droppedIds });
     return true;
-  }
-
-  /**
-   * Mission-aware putdown selection. Default: empty list = drop all.
-   *  - deliver_exactly_n: drop exactly N (highest value first);
-   *  - deliver_less_value_than: greedy lowest-value subset under the cap
-   *    (null = no compliant subset yet, so do not put down).
-   * TODO(strategy): tune subset choice (e.g. keep high-value parcels
-   * carried for a later compliant delivery).
-   */
-  #selectParcelsForPutdown(beliefs) {
-    const carried = beliefs.carried();
-    const { deliverExactly, deliverMaxValue } = beliefs.mission;
-
-    if (deliverExactly != null && carried.length > deliverExactly) {
-      return carried
-        .slice()
-        .sort((a, b) => beliefs.projectedReward(b) - beliefs.projectedReward(a))
-        .slice(0, deliverExactly)
-        .map((p) => p.id);
-    }
-
-    if (deliverMaxValue != null) {
-      const sorted = carried
-        .slice()
-        .sort((a, b) => beliefs.projectedReward(a) - beliefs.projectedReward(b));
-      const selected = [];
-      let total = 0;
-      for (const parcel of sorted) {
-        const value = Math.max(beliefs.projectedReward(parcel), 0);
-        if (value > deliverMaxValue || total + value > deliverMaxValue) break;
-        selected.push(parcel.id);
-        total += value;
-      }
-      if (selected.length > 0) return selected;
-      return null;
-    }
-
-    return []; // empty list = put down everything
   }
 }
 

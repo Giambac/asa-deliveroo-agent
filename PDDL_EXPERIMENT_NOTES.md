@@ -8,6 +8,11 @@ results.
 Use BFS/BDI as the default runtime planner. Keep PDDL as an optional,
 meaningful planner integration for experiments and report evidence.
 
+The full PDDL pickup-and-deliver plan is now mission-safe: it defers to the
+BDI mission plans whenever a mission constraint is active and reuses their
+compliant-subset putdown selection, so `PDDL_DELIVERY_ENABLED` is off by
+default for performance, not correctness.
+
 Recommended defaults:
 
 ```env

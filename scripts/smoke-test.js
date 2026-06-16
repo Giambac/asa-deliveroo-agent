@@ -416,6 +416,143 @@ assert(
   lib.plansFor({ type: 'go_pick_up' }, { pddlPlanner: { isDeliveryEnabled: () => true } })[0].name === 'PddlPickUpAndDeliver',
   'PDDL delivery plan precedes normal pickup when explicitly enabled',
 );
+
+// --- PDDL delivery is mission-safe (defers to the BDI mission plans) -------
+// Gate: the single-parcel PDDL delivery plan must NOT activate while a
+// delivery/positional mission constraint is in force; those are served by
+// the dedicated BDI plans, which enforce exact-N / threshold compliance.
+const pddlGateBeliefs = new BeliefBase();
+const pddlDeliveryOn = { pddlPlanner: { isDeliveryEnabled: () => true }, beliefs: pddlGateBeliefs };
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'PddlPickUpAndDeliver',
+  'PDDL delivery applies when no mission constraint is active',
+);
+pddlGateBeliefs.mission.deliverExactly = 3;
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'GoPickUp',
+  'PDDL delivery defers to the BDI plan under deliver_exactly_n',
+);
+pddlGateBeliefs.mission.deliverExactly = null;
+pddlGateBeliefs.mission.deliverMaxValue = 10;
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'GoPickUp',
+  'PDDL delivery defers to the BDI plan under deliver_less_value_than',
+);
+pddlGateBeliefs.mission.deliverMaxValue = null;
+pddlGateBeliefs.mission.active = { kind: 'go_to' };
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'GoPickUp',
+  'PDDL delivery defers to the BDI plan under an active positional mission',
+);
+pddlGateBeliefs.mission.active = null;
+pddlGateBeliefs.mission.handover = { active: true };
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'GoPickUp',
+  'PDDL delivery defers to the BDI plan during an active handover',
+);
+pddlGateBeliefs.mission.handover = { active: false };
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, pddlDeliveryOn)[0].name === 'PddlPickUpAndDeliver',
+  'PDDL delivery still applies when a handover is present but not active',
+);
+pddlGateBeliefs.mission.handover = null;
+
+// Putdown guard (defense-in-depth): even if forced to run, the PDDL
+// delivery putdown reuses the same safety selection as DeliverCarried.
+const PddlDeliverPlan = lib.plansFor(
+  { type: 'go_pick_up' },
+  { pddlPlanner: { isDeliveryEnabled: () => true }, beliefs: new BeliefBase() },
+)[0];
+const deliverOption = { type: 'go_pick_up', parcelId: 'target', x: 1, y: 0 };
+const onePutdownPlan = { planDelivery: async () => [{ type: 'putdown' }] };
+function makePddlDeliveryBeliefs() {
+  const b = new BeliefBase();
+  b.loadMap(2, 1, [{ x: 0, y: 0, type: '3' }, { x: 1, y: 0, type: '2' }]);
+  b.updateMe({ id: 'me1', name: 'tester', x: 1, y: 0, score: 0 });
+  // a free target parcel the plan is dispatched for (not carried)
+  b.parcels.set('target', { id: 'target', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now() });
+  return b;
+}
+
+// exact-N not satisfied -> abort (no drop), so the normal plans take over
+const pddlExact = makePddlDeliveryBeliefs();
+pddlExact.parcels.set('c1', { id: 'c1', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlExact.parcels.set('c2', { id: 'c2', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlExact.mission.deliverExactly = 3;
+let pddlExactPutdown = false;
+let pddlExactReason = null;
+try {
+  await new PddlDeliverPlan({
+    beliefs: pddlExact,
+    executor: { putdown: async () => { pddlExactPutdown = true; return [{ id: 'c1' }]; } },
+    pddlPlanner: onePutdownPlan,
+  }).execute(deliverOption);
+} catch (err) { pddlExactReason = err?.reason; }
+assert(pddlExactReason === 'pddl-delivery-exactly-not-ready', 'PDDL delivery aborts an under-sized exact-N batch');
+assert(!pddlExactPutdown, 'PDDL delivery does not putdown an under-sized exact-N batch');
+
+// value-threshold: no compliant subset -> abort
+const pddlThreshAbort = makePddlDeliveryBeliefs();
+pddlThreshAbort.parcels.set('high', { id: 'high', x: 1, y: 0, reward: 25, rewardAtLastSeen: 25, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlThreshAbort.mission.deliverMaxValue = 10;
+let pddlThreshPutdown = false;
+let pddlThreshReason = null;
+try {
+  await new PddlDeliverPlan({
+    beliefs: pddlThreshAbort,
+    executor: { putdown: async () => { pddlThreshPutdown = true; return [{ id: 'high' }]; } },
+    pddlPlanner: onePutdownPlan,
+  }).execute(deliverOption);
+} catch (err) { pddlThreshReason = err?.reason; }
+assert(pddlThreshReason === 'pddl-delivery-threshold-not-ready', 'PDDL delivery aborts an over-threshold batch');
+assert(!pddlThreshPutdown, 'PDDL delivery does not putdown an over-threshold batch');
+
+// value-threshold: compliant subset -> drop only the under-cap parcels
+const pddlThreshOk = makePddlDeliveryBeliefs();
+pddlThreshOk.parcels.set('high', { id: 'high', x: 1, y: 0, reward: 25, rewardAtLastSeen: 25, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlThreshOk.parcels.set('low', { id: 'low', x: 1, y: 0, reward: 8, rewardAtLastSeen: 8, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlThreshOk.mission.deliverMaxValue = 10;
+let pddlRequestedIds = null;
+await new PddlDeliverPlan({
+  beliefs: pddlThreshOk,
+  executor: { putdown: async (ids) => { pddlRequestedIds = ids; return ids.map((id) => ({ id })); } },
+  pddlPlanner: onePutdownPlan,
+  metrics: new MetricsCollector(),
+}).execute(deliverOption);
+assert(JSON.stringify(pddlRequestedIds) === '["low"]', 'PDDL delivery puts down only parcels under the value threshold');
+
+// runtime guard: a positional / handover mission arriving WHILE the PDDL
+// plan runs must stop the putdown (the gate only covers plan start).
+const pddlMidActive = makePddlDeliveryBeliefs();
+pddlMidActive.parcels.set('c1', { id: 'c1', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlMidActive.mission.active = { kind: 'go_to' };
+let pddlMidActivePutdown = false;
+let pddlMidActiveReason = null;
+try {
+  await new PddlDeliverPlan({
+    beliefs: pddlMidActive,
+    executor: { putdown: async () => { pddlMidActivePutdown = true; return [{ id: 'c1' }]; } },
+    pddlPlanner: onePutdownPlan,
+  }).execute(deliverOption);
+} catch (err) { pddlMidActiveReason = err?.reason; }
+assert(pddlMidActiveReason === 'pddl-delivery-mission-active', 'PDDL delivery aborts when a positional mission arrives mid-plan');
+assert(!pddlMidActivePutdown, 'PDDL delivery does not putdown while a positional mission is active');
+
+const pddlMidHandover = makePddlDeliveryBeliefs();
+pddlMidHandover.parcels.set('c1', { id: 'c1', x: 1, y: 0, reward: 10, rewardAtLastSeen: 10, lastSeen: Date.now(), carriedBy: 'me1' });
+pddlMidHandover.mission.handover = { active: true };
+let pddlMidHandoverPutdown = false;
+let pddlMidHandoverReason = null;
+try {
+  await new PddlDeliverPlan({
+    beliefs: pddlMidHandover,
+    executor: { putdown: async () => { pddlMidHandoverPutdown = true; return [{ id: 'c1' }]; } },
+    pddlPlanner: onePutdownPlan,
+  }).execute(deliverOption);
+} catch (err) { pddlMidHandoverReason = err?.reason; }
+assert(pddlMidHandoverReason === 'pddl-delivery-mission-active', 'PDDL delivery aborts when a handover starts mid-plan');
+assert(!pddlMidHandoverPutdown, 'PDDL delivery does not putdown during an active handover');
+
 const envelope = makeMessage('claim', { parcelId: 'p9' }, 'me1');
 assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol envelope detection');
 
