@@ -12,10 +12,10 @@ Run outputs live here:
   `score`, `pickup`, `delivery` (both with `count` and normalized `ids` —
   `ids` may be empty on server versions whose acks carry no id field),
   `intention_started/done/failed/aborted`, `plan_failed`, `pddl_plan`,
-  `pddl_failure`, `mission_interpreted`, `mission_preapplied`,
-  `mission_applied`, `mission_target_reached`, `msg_in`, `msg_out`, and
-  team/handover events: `teammate_discovered`, `handover_msg`,
-  `handover_deposit`, `handover_collect`.
+  `pddl_delivery_plan`, `pddl_failure`, `mission_interpreted`,
+  `mission_preapplied`, `mission_applied`, `mission_target_reached`,
+  `msg_in`, `msg_out`, and team/handover events: `teammate_discovered`,
+  `handover_msg`, `handover_deposit`, `handover_collect`.
 - `results/` — one JSON summary per run (final score, counters, score timeline),
   written when the agent stops (`scripts/run-experiment.js` does this automatically).
 

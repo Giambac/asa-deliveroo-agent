@@ -14,6 +14,7 @@ import { OptionGenerator } from '../src/core/OptionGenerator.js';
 import { createStrategy } from '../src/strategies/index.js';
 import { MissionInterpreter } from '../src/llm/MissionInterpreter.js';
 import { PddlPlanner } from '../src/planning/PddlPlanner.js';
+import { DELIVEROO_DOMAIN } from '../src/planning/pddlDomain.js';
 import { buildDefaultPlanLibrary, chooseHoldTile } from '../src/core/PlanLibrary.js';
 import { makeMessage, isProtocolMessage } from '../src/communication/MessageTypes.js';
 import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
@@ -258,17 +259,37 @@ assert(pathAfterBlock && pathAfterBlock.directions.length === 5, 'path still exi
 // --- PDDL problem generation ----------------------------------------------------------
 const pddl = new PddlPlanner({
   beliefs,
-  config: { pddl: { enabled: true, maxTiles: 100 } },
+  config: { pddl: { enabled: true, maxTiles: 100, minPathLength: 0 } },
   metrics: new MetricsCollector(),
 });
 const problem = pddl.buildProblem({ x: 0, y: 0 }, { x: 3, y: 2 });
 assert(problem.includes('(:goal (at t_3_2))'), 'PDDL goal emitted');
 assert(problem.includes('(at t_0_0)'), 'PDDL initial position emitted');
 assert(!problem.includes('t_2_1'), 'blocked tile excluded from PDDL problem');
+assert(DELIVEROO_DOMAIN.includes('(:action pickup'), 'PDDL domain includes pickup action');
+assert(DELIVEROO_DOMAIN.includes('(:action putdown'), 'PDDL domain includes putdown action');
+const deliveryProblem = pddl.buildDeliveryProblem(
+  { x: 0, y: 0 },
+  { id: 'parcel-1', x: 1, y: 0 },
+  { x: 3, y: 2 },
+);
+assert(deliveryProblem.includes('(parcel p_parcel_1)'), 'PDDL delivery problem emits parcel object');
+assert(deliveryProblem.includes('(parcel-at p_parcel_1 t_1_0)'), 'PDDL delivery problem emits parcel position');
+assert(deliveryProblem.includes('(delivery t_3_2)'), 'PDDL delivery problem emits delivery tile');
+assert(deliveryProblem.includes('(:goal (delivered p_parcel_1))'), 'PDDL delivery problem goal is delivered parcel');
 
 // --- Plan library ordering + protocol envelope ------------------------------------------
+beliefs.clearCarried();
 const lib = buildDefaultPlanLibrary();
-const goToPlans = lib.plansFor({ type: 'go_to' }, { pddlPlanner: pddl });
+const goToPlans = lib.plansFor(
+  { type: 'go_to', x: 3, y: 2 },
+  {
+    pddlPlanner: pddl,
+    beliefs,
+    pathPlanner: planner,
+    config: { pddl: { minPathLength: 0, avoidWhileCarrying: true } },
+  },
+);
 assert(
   goToPlans.length === 2 && goToPlans[0].name === 'PddlGoTo',
   'PDDL plan precedes BFS plan when enabled',
@@ -359,6 +380,42 @@ await new thresholdPlan({
 }).execute();
 assert(JSON.stringify(requestedThresholdIds) === '["low"]', 'DeliverCarried selects only parcels under the value threshold');
 
+const goToPlansShortPath = lib.plansFor(
+  { type: 'go_to', x: 3, y: 2 },
+  {
+    pddlPlanner: pddl,
+    beliefs,
+    pathPlanner: planner,
+    config: { pddl: { minPathLength: 10, avoidWhileCarrying: true } },
+  },
+);
+assert(
+  goToPlansShortPath.length === 1 && goToPlansShortPath[0].name === 'FollowPathGoTo',
+  'short paths skip PDDL and go straight to BFS',
+);
+beliefs.markCarried('p2');
+const goToPlansCarrying = lib.plansFor(
+  { type: 'go_to', x: 3, y: 2 },
+  {
+    pddlPlanner: pddl,
+    beliefs,
+    pathPlanner: planner,
+    config: { pddl: { minPathLength: 0, avoidWhileCarrying: true } },
+  },
+);
+assert(
+  goToPlansCarrying.length === 1 && goToPlansCarrying[0].name === 'FollowPathGoTo',
+  'carrying parcels skips PDDL to avoid solver latency during decay',
+);
+beliefs.clearCarried();
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, { pddlPlanner: { isDeliveryEnabled: () => false } })[0].name === 'GoPickUp',
+  'normal pickup plan first when PDDL delivery disabled',
+);
+assert(
+  lib.plansFor({ type: 'go_pick_up' }, { pddlPlanner: { isDeliveryEnabled: () => true } })[0].name === 'PddlPickUpAndDeliver',
+  'PDDL delivery plan precedes normal pickup when explicitly enabled',
+);
 const envelope = makeMessage('claim', { parcelId: 'p9' }, 'me1');
 assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol envelope detection');
 
