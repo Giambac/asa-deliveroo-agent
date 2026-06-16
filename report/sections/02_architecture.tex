@@ -15,7 +15,8 @@ The two agents share one BDI pipeline; only the top of the stack differs
             |              mission state for Agent B)
    IntentionRevision      commit / revise (replace policy + hysteresis)
             |
-     PlanLibrary          how: GoPickUp, DeliverCarried, Explore,
+     PlanLibrary          how: GoPickUp, DeliverCarried, Explore, Wait,
+            |              mission + handover plans (Agent B),
             |              PddlGoTo -> FollowPathGoTo (BFS fallback)
      ActionExecutor       serialized move/pickup/putdown, red-light gate
 \end{verbatim}

@@ -20,12 +20,17 @@
   language=Java % closest builtin to JavaScript; switch if listings-js is added
 }
 
+% Absorb the few long unbreakable \texttt{} tokens (e.g. identifier names)
+% as a last resort, so prose paragraphs do not overflow the margin.
+\emergencystretch=3em
+
 \title{Autonomous Software Agents for Deliveroo.js\\
   \large BDI agent, LLM agent, coordination and PDDL planning}
 
-% TODO: all group members — name, surname, email, student ID (exam requirement)
 \author{
-  Matteo Gervasi \\ \texttt{matteogervasi2000@gmail.com} \\ Student ID: TODO
+  Matteo Gervasi \\ Student ID: 265428
+  \and
+  Teona Pop Stojanova \\ Student ID: 265750
 }
 \date{\today}
 

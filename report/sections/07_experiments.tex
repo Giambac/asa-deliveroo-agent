@@ -10,7 +10,12 @@ comparison tables. The Challenge~1 campaign covered all eight \texttt{26c1\_*}
 maps, four strategies, five 120\,s runs each (160 runs).
 
 \paragraph{Baseline result.} \texttt{greedy-nearest} is the strongest strategy:
-it wins outright on six maps and ties on the other two; it is never beaten.
+it wins outright on six maps and is statistically tied on the other two
+(\texttt{26c1\_3}, \texttt{26c1\_5}, where all four strategies remain within
+roughly 20--25 points, small relative to the run-to-run variance of the $n{=}5$
+campaign), so it is never \emph{significantly} beaten. The best non-greedy
+strategy on every map is \texttt{delivery-threshold} (\texttt{d.thr.}\ in the
+table).
 
 \begin{center}\small
 \begin{tabular}{@{}lrrl@{}}
@@ -75,5 +80,38 @@ there either (validating the reconciliation layer). The live map was
 and scored~0 --- a compatibility limit (no crate modeling), not a strategy
 benchmark.
 
-% TODO (after Agent B): Challenge 2 per-mission outcomes (bonus/compliance),
-% PDDL on/off comparison (latency, plan length, failure rate).
+\paragraph{Challenge~2 (Agent~B) validation.} On the local server with the real
+course LLM gateway (\texttt{llama-3.3-70b} over VPN, so \texttt{source=llm} rows
+are genuine interpretations) and the official mission agents connecting as god,
+Agent~B passed all eight level~1--2 scenarios (Table~\ref{tab:c2}). Seven are
+LLM-driven; 26c2\_9 (red/green light) is fallback by design, since the gate must
+be instantaneous. The two forbidden-mission scenarios (26c2\_4, 26c2\_6) are
+passes in the sense of \emph{no penalty}: the pre-apply (Section~\ref{sec:llm})
+blocks the forbidden tiles before the agent can cross them. On 26c2\_4 a pre-fix
+run took the $-377$ penalty when an 8.7\,s interpretation arrived too late;
+with the pre-apply the same scenario incurs no penalty ($+445$ in a re-run,
+$+648$ in the full suite). The PDDL on/off comparison is reported separately in
+Table~\ref{tab:pddl} (Section~\ref{sec:pddl}).
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Scenario & Mission & Source & Outcome \\
+\midrule
+26c2\_3 & question-answer (calc $\to$ 22)      & llm      & PASS, $+10000$ \\
+26c2\_1 & \texttt{go\_to} bonus                & llm      & PASS, $+1000$ \\
+26c2\_2 & \texttt{deliver\_at} (1,1)           & llm      & PASS, $+1000$ \\
+26c2\_5 & \texttt{deliver\_exactly\_n} (3)     & llm      & PASS, $+100$ \\
+26c2\_7 & \texttt{deliver\_less\_value\_than} ($\leq$10) & llm & PASS, $+1000$ \\
+26c2\_4 & \texttt{go\_to} \emph{forbidden}     & llm      & PASS, no penalty ($+648$) \\
+26c2\_6 & \texttt{deliver\_at} \emph{forbidden}& llm      & PASS, no penalty ($+359$) \\
+26c2\_9 & red/green light                      & fallback & PASS, no penalty \\
+\bottomrule
+\end{tabular}
+\caption{Challenge~2 levels~1--2, campaign \texttt{c2-full-v5} (one run per
+scenario; the timing-sensitive passes were re-confirmed once). Local server,
+official mission agents, real LLM gateway. Honest caveat: encouraging, not a
+five-run statistic --- but the failure modes are deterministic in code.}
+\label{tab:c2}
+\end{table}
