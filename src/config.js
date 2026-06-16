@@ -48,6 +48,11 @@ export function loadConfig(overrides = {}) {
       waitMs: 300,
       // Teammate position heartbeat period.
       heartbeatMs: 1000,
+      // Go-to-and-wait (26c2_10): how long to wait for the teammate to
+      // reach the neighbourhood before giving up, and how long both then
+      // hold together so the mission observer sees them in place.
+      teammateWaitMs: 15000,
+      holdTogetherMs: 2000,
     },
 
     // --- PDDL ---------------------------------------------------------------

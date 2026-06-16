@@ -300,6 +300,35 @@ export class GoToMissionTarget extends PlanBase {
     const mission = option.mission;
     if (!beliefs.mission.active) throw { reason: 'mission-gone' };
 
+    // Go-to-and-wait (26c2_10): reach a tile WITHIN `tolerance` of the
+    // target (two agents cannot share a tile), then wait for the teammate
+    // to reach the neighbourhood too (via position heartbeats) and hold
+    // together briefly so the mission observer sees both in place.
+    if (mission.kind === 'go_to' && mission.holdAtTarget && (mission.tolerance ?? 0) > 0) {
+      const target = mission.targets?.[0];
+      if (!target) throw { reason: 'mission-target-unreachable' };
+      const hold = chooseHoldTile(beliefs, pathPlanner, target, mission.tolerance);
+      if (!hold) throw { reason: 'mission-target-unreachable' };
+      const atHold = () => Math.round(beliefs.me.x) === hold.x && Math.round(beliefs.me.y) === hold.y;
+      if (!atHold()) {
+        await this.subIntention({ type: 'go_to', key: `go_to:${hold.x},${hold.y}`, x: hold.x, y: hold.y });
+        this.assertRunning();
+      }
+      const arrived = await this.#waitForTeammateNear(target, mission.tolerance);
+      if (!arrived) {
+        // Do NOT falsely complete: the mission needs BOTH agents in the
+        // neighbourhood. Fail and keep the mission active so we retry
+        // (the agent holds its position and waits again).
+        logger?.log('mission_wait_timeout', { kind: mission.kind, target: hold, tolerance: mission.tolerance });
+        throw { reason: 'teammate-not-arrived' };
+      }
+      // Both in the neighbourhood: hold together so the observer sees them.
+      await sleep(this.context.config?.agent?.holdTogetherMs ?? 2000);
+      logger?.log('mission_target_reached', { kind: mission.kind, target: hold, tolerance: mission.tolerance, waited: true });
+      beliefs.completeMission();
+      return true;
+    }
+
     // Choose the nearest of the mission's target coordinates.
     const me = { x: Math.round(beliefs.me.x), y: Math.round(beliefs.me.y) };
     let best = null;
@@ -333,17 +362,72 @@ export class GoToMissionTarget extends PlanBase {
     }
 
     if (mission.kind === 'go_to' && mission.holdAtTarget) {
-      // Team variant ("wait for each other"): hold position briefly so
-      // the mission agent can observe both agents in place.
-      // TODO(strategy): replace the fixed hold with an explicit
-      // position/ack exchange with the teammate (26c2_10).
-      await sleep(5000);
+      // Legacy hold (holdAtTarget without a tolerance): brief fixed hold.
+      await sleep(this.context.config?.agent?.holdTogetherMs ?? 2000);
     }
 
     logger?.log('mission_target_reached', { kind: mission.kind, target: best });
     beliefs.completeMission();
     return true;
   }
+
+  /**
+   * Wait until the teammate is within `radius` (Manhattan) of the target,
+   * using the position heartbeats already maintained in beliefs.teammate.
+   * Bounded by teammateWaitMs.
+   * @returns {Promise<boolean>} true if the teammate reached the
+   *   neighbourhood before the deadline, false on timeout.
+   */
+  async #waitForTeammateNear(target, radius) {
+    const { beliefs, config } = this.context;
+    const deadline = Date.now() + (config?.agent?.teammateWaitMs ?? 15000);
+    const mateNear = () => {
+      const m = beliefs.teammate;
+      if (m?.x == null || m?.y == null) return false;
+      return Math.abs(Math.round(m.x) - target.x) + Math.abs(Math.round(m.y) - target.y) <= radius;
+    };
+    while (!mateNear() && Date.now() < deadline) {
+      this.assertRunning();
+      await sleep(200);
+    }
+    return mateNear();
+  }
+}
+
+/**
+ * Pick a hold tile for a go-to-and-wait mission: the nearest reachable
+ * walkable tile within `radius` (Manhattan) of the target, preferring not
+ * the teammate's current tile so the two agents do not contend for the
+ * same spot. Returns null when nothing in range is reachable.
+ * @param {import('./BeliefBase.js').BeliefBase} beliefs
+ * @param {import('../planning/PathPlanner.js').PathPlanner} pathPlanner
+ * @param {{x:number, y:number}} target
+ * @param {number} radius
+ * @returns {{x:number, y:number}|null}
+ */
+export function chooseHoldTile(beliefs, pathPlanner, target, radius) {
+  const graph = beliefs.graph;
+  if (!graph) return null;
+  const from = { x: Math.round(beliefs.me.x), y: Math.round(beliefs.me.y) };
+  const mate = beliefs.teammate;
+  const mateTile = mate?.x != null && mate?.y != null
+    ? { x: Math.round(mate.x), y: Math.round(mate.y) }
+    : null;
+  let best = null;
+  let bestScore = Infinity;
+  for (const tile of graph.tiles.values()) {
+    if (!tile.walkable) continue;
+    if (Math.abs(tile.x - target.x) + Math.abs(tile.y - target.y) > radius) continue;
+    const path = pathPlanner.shortestPath(from, { x: tile.x, y: tile.y });
+    if (!path) continue;
+    const onMate = mateTile && mateTile.x === tile.x && mateTile.y === tile.y;
+    const score = path.directions.length + (onMate ? 1000 : 0);
+    if (score < bestScore) {
+      best = { x: tile.x, y: tile.y };
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /**

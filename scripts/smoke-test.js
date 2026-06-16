@@ -14,7 +14,7 @@ import { OptionGenerator } from '../src/core/OptionGenerator.js';
 import { createStrategy } from '../src/strategies/index.js';
 import { MissionInterpreter } from '../src/llm/MissionInterpreter.js';
 import { PddlPlanner } from '../src/planning/PddlPlanner.js';
-import { buildDefaultPlanLibrary } from '../src/core/PlanLibrary.js';
+import { buildDefaultPlanLibrary, chooseHoldTile } from '../src/core/PlanLibrary.js';
 import { makeMessage, isProtocolMessage } from '../src/communication/MessageTypes.js';
 import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
 import { aggregateResults } from '../src/metrics/aggregate.js';
@@ -171,6 +171,64 @@ assert(
   'red light shout gates movement even when it mentions green',
 );
 assert(MissionInterpreter.parseLightState('GREEN LIGHT').movementAllowed === true, 'green light opens gate');
+
+// Go-to-and-wait (26c2_10): target + neighbourhood radius + hold.
+const gotoWait = F('Move both agents to the neighborhood of position (19,5) within a maximum distance of 3, and have them wait for each other. You will receive 500pts.');
+assert(gotoWait.kind === 'go_to' && !gotoWait.forbidden, 'go-to-and-wait parsed as a positive go_to');
+assert(gotoWait.targets[0] && gotoWait.targets[0].x === 19 && gotoWait.targets[0].y === 5, 'go-to-and-wait target extracted');
+assert(gotoWait.tolerance === 3, 'go-to-and-wait neighbourhood radius extracted');
+assert(gotoWait.holdAtTarget === true, 'go-to-and-wait sets holdAtTarget');
+
+// chooseHoldTile: nearest reachable tile within the neighbourhood radius,
+// avoiding the teammate's tile so the two agents do not contend for one spot.
+const hw = new BeliefBase();
+hw.loadMap(4, 3, tiles);
+hw.updateMe({ id: 'me1', name: 'agentA', x: 0, y: 0, score: 0 });
+const hwPlanner = new PathPlanner(hw);
+const hold = chooseHoldTile(hw, hwPlanner, { x: 2, y: 2 }, 1);
+assert(hold && Math.abs(hold.x - 2) + Math.abs(hold.y - 2) <= 1, 'chooseHoldTile returns a tile within the radius');
+assert(hold && hw.graph.isWalkable(hold.x, hold.y), 'chooseHoldTile returns a walkable tile');
+hw.teammate.x = hold.x;
+hw.teammate.y = hold.y;
+const hold2 = chooseHoldTile(hw, hwPlanner, { x: 2, y: 2 }, 1);
+assert(hold2 && !(hold2.x === hold.x && hold2.y === hold.y), 'chooseHoldTile avoids the teammate tile when alternatives exist');
+
+// The go-to-and-wait target centre may be a wall (26c2_10: (19,5) is type
+// '0'); the strategy must still rank the mission by the reachable
+// neighbourhood, not return -Infinity on the exact (unwalkable) centre.
+const gw = new BeliefBase();
+gw.loadMap(4, 3, tiles); // (1,1) is a wall
+gw.updateMe({ id: 'me1', name: 'agentA', x: 0, y: 0, score: 0 });
+gw.updateConfig({ CLOCK: 50, GAME: { parcels: { decaying_event: '1s' }, player: { movement_duration: 100 } } });
+gw.setMission({ kind: 'go_to', holdAtTarget: true, tolerance: 1, bonus: 500, targets: [{ x: 1, y: 1 }] });
+const gwOpt = new OptionGenerator().generate(gw).find((o) => o.type === 'go_to_mission_target');
+assert(!!gwOpt, 'go-to-and-wait generates a go_to_mission_target option');
+const gwUtil = createStrategy('mission-aware').utility(gwOpt, gw, new PathPlanner(gw).scoringHelpers());
+assert(Number.isFinite(gwUtil) && gwUtil > 0, 'go-to-and-wait ranks by the neighbourhood even when the target centre is a wall');
+
+// go-to-and-wait must NOT falsely complete if the teammate never arrives:
+// it aborts and keeps the mission active so it retries.
+const gwTo = new BeliefBase();
+gwTo.loadMap(4, 3, tiles);
+gwTo.updateMe({ id: 'me1', name: 'agentA', x: 2, y: 2, score: 0 }); // already within radius 1 of (2,2)
+gwTo.setMission({ kind: 'go_to', holdAtTarget: true, tolerance: 1, bonus: 500, targets: [{ x: 2, y: 2 }] });
+gwTo.teammate.x = 0; gwTo.teammate.y = 0; // distance 4 from (2,2): never near
+const gwToOpt = new OptionGenerator().generate(gwTo).find((o) => o.type === 'go_to_mission_target');
+let gwToReason = null;
+try {
+  const gwLib = buildDefaultPlanLibrary();
+  await new (gwLib.plansFor({ type: 'go_to_mission_target' }, {})[0])({
+    beliefs: gwTo,
+    executor: { move: async () => false },
+    pathPlanner: new PathPlanner(gwTo),
+    planLibrary: gwLib,
+    config: { agent: { teammateWaitMs: 50, holdTogetherMs: 1 } },
+  }).execute(gwToOpt);
+} catch (err) {
+  gwToReason = err?.reason;
+}
+assert(gwToReason === 'teammate-not-arrived', 'go-to-and-wait aborts (no false completion) when the teammate never arrives');
+assert(gwTo.mission.active != null, 'go-to-and-wait keeps the mission active after a wait timeout (will retry)');
 
 // Safety-critical constraints are pre-applied synchronously (before the
 // LLM round-trip) so a slow interpretation cannot incur a penalty.

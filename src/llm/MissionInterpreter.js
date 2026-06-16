@@ -94,6 +94,7 @@ export class MissionInterpreter {
       answer: obj.answer != null ? String(obj.answer) : null,
       holdAtTarget: obj.holdAtTarget === true,
       movementAllowed: typeof obj.movementAllowed === 'boolean' ? obj.movementAllowed : null,
+      tolerance: Number.isFinite(Number(obj.tolerance)) ? Number(obj.tolerance) : null,
     };
   }
 
@@ -161,9 +162,20 @@ export class MissionInterpreter {
     const negative =
       /\b(do not|don't|never|avoid|forbidden|penali[sz]ed?)\b/.test(lower) || (bonus ?? 0) < 0;
 
+    // Neighbourhood radius for go-to-and-wait missions ("within a maximum
+    // distance of 3"). The agent must reach a tile within this Manhattan
+    // distance of the target, not the exact target (two agents cannot
+    // share a tile).
+    const toleranceMatch =
+      lower.match(/within\s+(?:a\s+)?(?:maximum\s+|max\s+)?distance\s+(?:of\s+)?(\d+)/) ??
+      lower.match(/distance\s+(?:of\s+)?(\d+)/) ??
+      lower.match(/within\s+(\d+)\s*tiles?/);
+    const tolerance = toleranceMatch ? Number(toleranceMatch[1]) : null;
+
     const base = {
       targets, bonus, forbidden: false, count: null, threshold: null,
       expression: null, answer: null, holdAtTarget: false, movementAllowed: null,
+      tolerance,
     };
 
     // Rules announcement of the red/green light game.

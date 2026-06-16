@@ -163,6 +163,17 @@ They discover each other via a `hello` shout (logged as
 mission updates. Roles for the `one_pickup_another_deliver` handover
 (26c2_8) are explicit: **agentA picks up, agentB delivers**.
 
+The go-to-and-wait mission (26c2_10) has no mission agent in the course
+repo, so a local god-observer fixture reproduces its documented rule
+(reward when both agents stay within the radius together). Run it after
+the two agents, with `ADMIN_TOKEN` in `.env`:
+
+```bash
+# server: node index.js -g ../DeliverooAgent.js/missionAgents/challenge2/26c2_10.json
+# then the two agents (as above), then:
+node scripts/fixtures/goto-wait-mission.js   # local TEST HARNESS, not an official mission agent
+```
+
 ## Selecting a strategy
 
 `STRATEGY=<id>` in `.env` or `--strategy <id>` on any script:
@@ -279,6 +290,14 @@ interpretations, protocol messages) and — when stopped via
   end-to-end on 26c2_8**: the god mission agent awarded the
   "picked up by one agent, delivered by another" bonus repeatedly across
   successive handover cycles.
+- Go-to-and-wait (26c2_10, level 3): both agents go to the neighbourhood
+  of the target (radius from "within distance N"; the centre may be a
+  wall), each to a distinct reachable tile, then wait for the teammate via
+  position heartbeats and hold together. **Validated live end-to-end** with
+  a local god-observer fixture (`scripts/fixtures/goto-wait-mission.js`,
+  since the course repo has no mission agent for this scenario): both
+  reached distinct tiles within distance 3 of (19,5) and the fixture
+  awarded the 500 pt bonus.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
 - Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates
@@ -299,16 +318,16 @@ interpretations, protocol messages) and — when stopped via
 1. **Tuning & validation on Challenge 1** — run all 8 maps, tune
    `deliverBias`, thresholds, hysteresis; add opponent-aware utilities
    (drop contested parcels when an opponent is closer).
-2. **Challenge 2 team go-to-and-wait (26c2_10)** — replace the fixed 5 s
-   hold in `GoToMissionTarget` with real teammate position/ack
-   synchronization. (The one-pickup-another-deliver handover, 26c2_8, is
-   done and validated end-to-end.)
-3. **PDDL depth** — extend the domain with pickup/putdown to plan whole
+2. **PDDL depth** — extend the domain with pickup/putdown to plan whole
    collect-and-deliver sequences; measure BFS vs PDDL for the report.
-4. **LLM tool loop** — optionally let the LLM drive the `tools.js`
+3. **LLM tool loop** — optionally let the LLM drive the `tools.js`
    registry for open-ended requests (lab8 07-pattern).
-5. **Experiments + report** — ≥5 runs per (map, strategy), notebook
+4. **Experiments + report** — ≥5 runs per (map, strategy), notebook
    analysis, fill the report sections.
+
+Challenge 2 is feature-complete: levels 1–2 (single agent) and level 3
+team coordination — both 26c2_8 (handover) and 26c2_10 (go-to-and-wait) —
+are implemented and validated live end-to-end.
 
 ## Known assumptions
 
@@ -357,8 +376,11 @@ verified at runtime on the challenge server:
   (Agent A) is the picker, the LLM agent (Agent B) is the deliverer. This
   assumes the standard A=BDI / B=LLM setup; running two agents of the same
   kind would need an explicit role override.
-- **Hold duration** for go-to-and-wait missions is a fixed 5 s placeholder
-  until the explicit teammate synchronization is implemented.
+- **Go-to-and-wait** (26c2_10) waits for the teammate via position
+  heartbeats up to `teammateWaitMs`, then both hold `holdTogetherMs`; the
+  target centre may be a wall, so each agent goes to the nearest reachable
+  tile within the radius (preferring not the teammate's tile). Tested with
+  a local god-observer fixture (no official mission agent exists for it).
 - The `tile` event (map edits mid-game) triggers a full graph rebuild —
   acceptable because it is rare and maps are small.
 

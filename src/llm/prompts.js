@@ -28,7 +28,8 @@ Reply with ONLY a JSON object, no prose, with these fields:
   "expression": string or null,             // for question_answer (the question)
   "answer": string or null,                 // your computed answer, if you can solve it
   "holdAtTarget": boolean,                  // go_to that requires waiting at the target
-  "movementAllowed": boolean or null        // for light_state: false on RED, true on GREEN
+  "movementAllowed": boolean or null,       // for light_state: false on RED, true on GREEN
+  "tolerance": int or null                  // go_to neighbourhood radius ("within distance N")
 }
 
 Examples:
@@ -39,6 +40,8 @@ Examples:
 - "Calculate 5*(5+3)/2" ->
   {"kind":"question_answer","expression":"5*(5+3)/2","answer":"20",...}
 - "RED LIGHT" -> {"kind":"light_state","movementAllowed":false,...}
+- "Move both agents within distance 3 of (19,5) and wait for each other" ->
+  {"kind":"go_to","targets":[{"x":19,"y":5}],"holdAtTarget":true,"tolerance":3,...}
 
 Unused fields must be null/[]/false. If the message is not a mission,
 use kind "unknown".

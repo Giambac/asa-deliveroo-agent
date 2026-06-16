@@ -36,6 +36,22 @@ export class MissionAwareStrategy extends RewardDistanceStrategy {
   utility(option, beliefs, helpers) {
     switch (option.type) {
       case 'go_to_mission_target': {
+        const mission = option.mission;
+        const target = mission.targets?.[0];
+        // Go-to-and-wait (26c2_10): the target centre may be a wall, so
+        // rank by the nearest reachable tile WITHIN the neighbourhood
+        // radius, not the (possibly unwalkable) exact target.
+        if (target && (mission.tolerance ?? 0) > 0 && mission.holdAtTarget) {
+          let dist = Infinity;
+          for (const tile of beliefs.graph?.tiles.values() ?? []) {
+            if (!tile.walkable) continue;
+            if (Math.abs(tile.x - target.x) + Math.abs(tile.y - target.y) > mission.tolerance) continue;
+            const d = helpers.distanceTo(tile.x, tile.y);
+            if (d < dist) dist = d;
+          }
+          if (!Number.isFinite(dist)) return -Infinity;
+          return ((mission.bonus ?? 500) - dist * (helpers.decayPerTile || 0.1)) * this.missionWeight;
+        }
         const base = super.utility(option, beliefs, helpers); // StrategyBase case
         if (!Number.isFinite(base)) return base;
         return base * this.missionWeight;

@@ -33,4 +33,18 @@
 %    god mission agent awarded the cross-agent bonus repeatedly across
 %    successive handover cycles (A deposits at the rendezvous, B collects
 %    and delivers one step away on the delivery band).
+%  - Go-to-and-wait (26c2_10): the official repo provides no concrete
+%    mission agent (start.js references a placeholder ---.js), so we
+%    validated the documented semantics with a LOCAL god-observer fixture
+%    (scripts/fixtures/goto-wait-mission.js), clearly a test harness. The
+%    target centre may be a wall, so each agent goes to the nearest
+%    reachable tile within the radius (preferring not the teammate's tile,
+%    so they don't contend), then waits for the teammate via position
+%    heartbeats and holds together. On timeout (teammate never arrives)
+%    the plan aborts instead of falsely completing, keeping the mission
+%    active to retry. Validated live: A->(16,5), B->(19,2), both within
+%    distance 3 of (19,5), fixture awarded 500 pts. Honest caveat: that
+%    run interpreted via the deterministic fallback (the LLM request timed
+%    out); the tolerance field is in the LLM schema but a clean
+%    source=llm run on VPN is still worth recording.
 %  - Metrics: messages sent/received, claim conflicts avoided.
