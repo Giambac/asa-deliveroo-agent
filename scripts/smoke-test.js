@@ -399,6 +399,34 @@ try {
 assert(depReason === 'handover-exit-blocked', 'HandoverDeposit aborts when it cannot free the rendezvous');
 assert(!handoverSignalled, 'HandoverDeposit does not signal the drop while the rendezvous stays blocked');
 
+// Deliverer side (Fetta 3 step B): a waiting drop (located by coordinates)
+// generates a collect option, the strategy commits to it, and the plan
+// collects then clears the slot so the normal delivery path takes over.
+const del = new BeliefBase();
+del.loadMap(4, 3, tiles);
+del.handoverRole = 'deliverer';
+del.setMission({ kind: 'one_pickup_another_deliver' });
+del.applyHandoverUpdate({ state: 'dropped', parcelId: 'hx', x: 2, y: 2 });
+del.updateMe({ id: 'me2', name: 'agentB', x: 2, y: 2, score: 0 });
+del.updateConfig({ CLOCK: 50, GAME: { parcels: { decaying_event: '1s' }, player: { movement_duration: 100 } } });
+del.parcels.set('hx', { id: 'hx', x: 2, y: 2, reward: 30, rewardAtLastSeen: 30, lastSeen: Date.now(), carriedBy: null });
+const delPlanner = new PathPlanner(del);
+const colOpt = new OptionGenerator().generate(del).find((o) => o.type === 'handover_collect');
+assert(!!colOpt && colOpt.x === 2 && colOpt.y === 2, 'deliverer generates handover_collect at the drop coordinates');
+assert(Number.isFinite(ma.utility(colOpt, del, delPlanner.scoringHelpers())), 'handover_collect has a finite utility for the deliverer');
+const colPlanCls = lib.plansFor({ type: 'handover_collect' }, {})[0];
+assert(colPlanCls && colPlanCls.name === 'HandoverCollect', 'HandoverCollect plan serves handover_collect');
+await new colPlanCls({
+  beliefs: del,
+  executor: { pickup: async () => [{ id: 'hx' }] },
+  pathPlanner: delPlanner,
+  planLibrary: lib,
+  metrics: new MetricsCollector(),
+}).execute(colOpt);
+assert(del.mission.handover.parcel === null, 'HandoverCollect clears the drop slot after collecting');
+assert(del.mission.handover.myState === 'collected', 'HandoverCollect marks the deliverer state collected');
+assert(del.carried().some((p) => p.id === 'hx'), 'the collected parcel is now carried by the deliverer (to be delivered)');
+
 // --- Ack normalization + belief reconciliation (live-observed server quirk) -----
 assert(
   JSON.stringify(normalizeIdList([{ id: 'a' }, 'b', { parcelId: 'c' }, {}, null])) === '["a","b","c"]',

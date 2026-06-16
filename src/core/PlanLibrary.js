@@ -412,6 +412,49 @@ export class HandoverDeposit extends PlanBase {
   }
 }
 
+/**
+ * Deliverer side of the one_pickup_another_deliver handover (26c2_8): go
+ * to the drop (located by coordinates — robust to missing/stale ids),
+ * pick it up, and clear the handover slot. The parcel is then carried by
+ * us, so the normal DeliverCarried plan delivers it on a delivery tile —
+ * a different agent than the picker, which is what earns the team bonus.
+ */
+export class HandoverCollect extends PlanBase {
+  static isApplicableTo(option) {
+    return option.type === 'handover_collect';
+  }
+
+  async execute(option) {
+    const { beliefs, executor, metrics, logger } = this.context;
+    const handover = beliefs.mission.handover;
+    if (!handover?.active || handover.role !== 'deliverer') throw { reason: 'not-deliverer' };
+    const drop = handover.parcel ?? option;
+    if (!Number.isFinite(drop?.x) || !Number.isFinite(drop?.y)) throw { reason: 'no-drop' };
+
+    // 1. go to the drop tile (coordinates are the authoritative locator)
+    await this.subIntention({ type: 'go_to', key: `go_to:${drop.x},${drop.y}`, x: drop.x, y: drop.y });
+    this.assertRunning();
+
+    // 2. collect the handed-over parcel(s)
+    const picked = await executor.pickup();
+    if (picked.length === 0) {
+      handover.parcel = null; // the drop is gone (decayed / already taken)
+      metrics?.increment('handoverCollectsEmpty');
+      throw { reason: 'handover-collect-empty' };
+    }
+    const pickedIds = normalizeIdList(picked);
+    if (pickedIds.length > 0) for (const id of pickedIds) beliefs.markCarried(id);
+    else beliefs.markTilePickedUp();
+
+    // 3. clear the slot so we deliver it next (and do not re-collect here)
+    handover.parcel = null;
+    handover.myState = 'collected';
+    metrics?.increment('handoverCollects');
+    logger?.log('handover_collect', { x: drop.x, y: drop.y, count: picked.length });
+    return true;
+  }
+}
+
 export class Explore extends PlanBase {
   static isApplicableTo(option) {
     return option.type === 'explore';
@@ -471,6 +514,7 @@ export function buildDefaultPlanLibrary() {
   library.register(DeliverCarried);
   library.register(GoToMissionTarget);
   library.register(HandoverDeposit);
+  library.register(HandoverCollect);
   library.register(Explore);
   library.register(Wait);
   library.register(PddlGoTo); // applicability self-checks pddl enablement

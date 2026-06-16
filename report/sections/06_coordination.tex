@@ -27,6 +27,10 @@
 %    actually vacating it (else handover-exit-blocked, no signal — never
 %    send the deliverer to a tile the picker still blocks); the
 %    strategy bars the picker from self-delivering and the option
-%    generator stops it re-grabbing its own drop. Deliverer side (collect
-%    + deliver) is the remaining step.
+%    generator stops it re-grabbing its own drop. Deliverer side done:
+%    HandoverCollect fetches the drop by coordinates and the normal
+%    DeliverCarried delivers it. Validated live end-to-end on 26c2_8 — the
+%    god mission agent awarded the cross-agent bonus repeatedly across
+%    successive handover cycles (A deposits at the rendezvous, B collects
+%    and delivers one step away on the delivery band).
 %  - Metrics: messages sent/received, claim conflicts avoided.

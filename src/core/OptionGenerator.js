@@ -58,14 +58,26 @@ export class OptionGenerator {
       });
     }
 
-    // Handover (26c2_8): the picker, once carrying, brings the parcel to
-    // the shared rendezvous and drops it for the deliverer (deliverer-side
-    // collection is generated separately). `handover` is bound above.
+    // Handover (26c2_8). `handover` is bound above.
+    //  - picker: once carrying, bring the parcel to the rendezvous and drop it;
+    //  - deliverer: once a drop is waiting (located by coordinates), go
+    //    collect it (the normal deliver_carried then delivers it -> bonus).
     if (handover?.active && handover.role === 'picker' && handover.rendezvous && beliefs.carried().length > 0) {
       options.push({
         type: 'handover_deposit',
         key: 'handover_deposit',
         rendezvous: handover.rendezvous,
+      });
+    }
+    if (
+      handover?.active && handover.role === 'deliverer' && handover.parcel &&
+      Number.isFinite(handover.parcel.x) && Number.isFinite(handover.parcel.y)
+    ) {
+      options.push({
+        type: 'handover_collect',
+        key: 'handover_collect',
+        x: handover.parcel.x,
+        y: handover.parcel.y,
       });
     }
 
@@ -90,7 +102,11 @@ export class OptionGenerator {
       case 'deliver_carried':
         return beliefs.carried().length > 0;
       case 'handover_deposit':
-        return !!beliefs.mission.handover?.active && beliefs.carried().length > 0;
+      case 'handover_collect':
+        // Valid for the lifetime of an active handover: the running plan is
+        // atomic past its go_to, so carrying/drop state changing mid-plan
+        // (e.g. carried -> 0 right after the deposit putdown) must not abort it.
+        return !!beliefs.mission.handover?.active;
       case 'go_to_mission_target':
         return beliefs.mission.active != null;
       default:

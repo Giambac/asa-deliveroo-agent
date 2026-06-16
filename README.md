@@ -273,9 +273,12 @@ interpretations, protocol messages) and — when stopped via
   teammate (logged `handover_deposit`) — **only after it has actually
   vacated the tile** (else `handover-exit-blocked`, no signal, so the
   deliverer is never sent to a tile the picker still blocks). It never
-  re-grabs its own drop.
-  The deliverer side (collect at the rendezvous and deliver) is the next
-  step.
+  re-grabs its own drop. The deliverer (Agent B) fetches the drop by
+  coordinates (`handover_collect`) and delivers it via the normal delivery
+  path, so a different agent does the final delivery. **Validated live
+  end-to-end on 26c2_8**: the god mission agent awarded the
+  "picked up by one agent, delivered by another" bonus repeatedly across
+  successive handover cycles.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
 - Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates
@@ -296,9 +299,10 @@ interpretations, protocol messages) and — when stopped via
 1. **Tuning & validation on Challenge 1** — run all 8 maps, tune
    `deliverBias`, thresholds, hysteresis; add opponent-aware utilities
    (drop contested parcels when an opponent is closer).
-2. **Challenge 2 choreography** — full one-pickup-another-deliver
-   handover (rendezvous negotiation via `ask`, putdown-before-pickup
-   sequencing) and the team go-to-and-wait mission (26c2_10).
+2. **Challenge 2 team go-to-and-wait (26c2_10)** — replace the fixed 5 s
+   hold in `GoToMissionTarget` with real teammate position/ack
+   synchronization. (The one-pickup-another-deliver handover, 26c2_8, is
+   done and validated end-to-end.)
 3. **PDDL depth** — extend the domain with pickup/putdown to plan whole
    collect-and-deliver sequences; measure BFS vs PDDL for the report.
 4. **LLM tool loop** — optionally let the LLM drive the `tools.js`

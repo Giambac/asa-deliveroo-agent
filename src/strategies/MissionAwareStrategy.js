@@ -17,11 +17,11 @@ import { RewardDistanceStrategy } from './RewardDistanceStrategy.js';
  *    parcel can satisfy the value cap;
  *  - red light: enforced by the ActionExecutor movement gate.
  *
- *  - one_pickup_another_deliver (picker side): once carrying, deliver via
- *    the rendezvous (handover_deposit) instead of self-delivering, so a
- *    different agent does the final delivery and the team earns the bonus.
- *
- * TODO(strategy): deliverer side (collect at the rendezvous and deliver).
+ *  - one_pickup_another_deliver: the picker, once carrying, hands the
+ *    parcel over at the rendezvous (handover_deposit) instead of self-
+ *    delivering; the deliverer fetches the drop (handover_collect) and
+ *    delivers it via the normal deliver_carried path — a different agent
+ *    does the final delivery, so the team earns the bonus.
  */
 export class MissionAwareStrategy extends RewardDistanceStrategy {
   static id = 'mission-aware';
@@ -47,6 +47,13 @@ export class MissionAwareStrategy extends RewardDistanceStrategy {
         const r = option.rendezvous ?? beliefs.mission.handover?.rendezvous;
         if (!r) return -Infinity;
         const d = helpers.distanceTo(r.x, r.y);
+        if (!Number.isFinite(d)) return -Infinity;
+        return MissionAwareStrategy.HANDOVER_BOOST - d * (helpers.decayPerTile || 0.1);
+      }
+      case 'handover_collect': {
+        // Deliverer fetching the drop: dominate farming so the handed-over
+        // parcel is collected promptly (then delivered for the team bonus).
+        const d = helpers.distanceTo(option.x, option.y);
         if (!Number.isFinite(d)) return -Infinity;
         return MissionAwareStrategy.HANDOVER_BOOST - d * (helpers.decayPerTile || 0.1);
       }
