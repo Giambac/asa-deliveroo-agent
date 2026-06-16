@@ -309,6 +309,35 @@ assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol
 assert(loadConfig({ teammateName: 'agentA' }).teammateName === 'agentA', 'loadConfig honors --teammate override');
 assert(loadConfig({ name: 'agentB' }).name === 'agentB', 'loadConfig honors --name override');
 
+// --- Handover data layer (26c2_8 level 3, Fetta 2) -----------------------------
+// Rendezvous is deterministic and map-derived: a non-delivery walkable tile
+// one step from a delivery (so both agents agree without negotiating).
+const rv1 = graph.rendezvousTile();
+const rv2 = graph.rendezvousTile();
+assert(rv1 && rv1.x === rv2.x && rv1.y === rv2.y, 'rendezvousTile is deterministic');
+assert(rv1 && !graph.tileAt(rv1.x, rv1.y).delivery && graph.isWalkable(rv1.x, rv1.y), 'rendezvous is a walkable non-delivery tile');
+assert(rv1 && graph.deliveryDistance(rv1.x, rv1.y) === 1, 'rendezvous is one step from a delivery tile');
+
+const hov = new BeliefBase();
+hov.loadMap(4, 3, tiles);
+hov.handoverRole = 'picker';
+hov.setMission({ kind: 'one_pickup_another_deliver' });
+assert(hov.mission.handover.active && hov.mission.handover.role === 'picker', 'handover mission sets the explicit role');
+assert(hov.mission.handover.rendezvous != null, 'handover mission computes a rendezvous from the map');
+// Coordinate-first locator: id + coords -> both stored.
+hov.applyHandoverUpdate({ state: 'dropped', parcelId: 'p7', x: 2, y: 2 });
+assert(
+  hov.mission.handover.parcel.x === 2 && hov.mission.handover.parcel.y === 2 && hov.mission.handover.parcel.id === 'p7',
+  'handover update stores drop coordinates and id',
+);
+assert(hov.mission.handover.peerState === 'dropped', 'handover update tracks peer state');
+// Coordinate fallback: a later message with coords but NO id still locates the drop.
+hov.applyHandoverUpdate({ state: 'dropped', x: 1, y: 0 });
+assert(
+  hov.mission.handover.parcel.x === 1 && hov.mission.handover.parcel.y === 0,
+  'handover locates the drop by coordinates even without a parcelId',
+);
+
 // --- Ack normalization + belief reconciliation (live-observed server quirk) -----
 assert(
   JSON.stringify(normalizeIdList([{ id: 'a' }, 'b', { parcelId: 'c' }, {}, null])) === '["a","b","c"]',

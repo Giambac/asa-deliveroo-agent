@@ -165,9 +165,16 @@ export class TeamProtocol {
         return;
       }
       case MessageTypes.HANDOVER: {
-        // TODO(strategy): full choreography — agree on a rendezvous
-        // tile, sequence putdown-before-pickup via askTeammate.
-        this.beliefs.mission.handover = { ...msg.payload, from: id, state: 'requested' };
+        // Revise the handover belief (belief logic lives in BeliefBase).
+        // Coordinates locate the drop; parcelId is only a hint.
+        this.beliefs.applyHandoverUpdate(msg.payload ?? {});
+        this.logger?.log('handover_msg', {
+          from: id,
+          state: msg.payload?.state ?? null,
+          parcelId: msg.payload?.parcelId ?? null,
+          x: msg.payload?.x ?? null,
+          y: msg.payload?.y ?? null,
+        });
         this.#acknowledge(MessageTypes.HANDOVER, reply);
         return;
       }

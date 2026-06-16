@@ -260,8 +260,15 @@ interpretations, protocol messages) and — when stopped via
   message arrives, before the LLM round-trip, then reconciled by the
   authoritative LLM result. Closes a live-observed window where a slow
   interpretation (8.7 s) let the agent cross a forbidden tile.
-- Team protocol: discovery, position heartbeat, claims, mission updates,
-  acks; validated tool registry for LLM tool-loop experiments.
+- Team protocol: discovery (logged `teammate_discovered`), position
+  heartbeat, claims, mission updates, acks; validated tool registry for
+  LLM tool-loop experiments.
+- Handover data layer (26c2_8, level 3 in progress): explicit roles
+  (Agent A picks up, Agent B delivers), a map-derived deterministic
+  rendezvous tile both agents agree on without negotiating, and a
+  coordinate-first handover belief (the drop is located by coordinates;
+  the parcel id is only a hint). The executable choreography
+  (deposit/collect plans + message sequencing) is the next step.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
 - Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates
@@ -335,6 +342,10 @@ verified at runtime on the challenge server:
   a few tiles blocked until the next mission. This is intentional — for
   the known templates the regex and LLM agree, and over-blocking a few
   tiles is far cheaper than a penalty.
+- **Handover roles** are derived from the runtime role: the BDI agent
+  (Agent A) is the picker, the LLM agent (Agent B) is the deliverer. This
+  assumes the standard A=BDI / B=LLM setup; running two agents of the same
+  kind would need an explicit role override.
 - **Hold duration** for go-to-and-wait missions is a fixed 5 s placeholder
   until the explicit teammate synchronization is implemented.
 - The `tile` event (map edits mid-game) triggers a full graph rebuild —

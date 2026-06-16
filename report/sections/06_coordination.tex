@@ -15,5 +15,12 @@
 %  - say vs ask: why ask is reserved for synchronization points
 %    (1 s server timeout).
 %  - The handover mission (one-pickup-another-deliver): rendezvous and
-%    putdown-before-pickup sequencing.
+%    putdown-before-pickup sequencing. Data layer (done): explicit roles
+%    (A=picker / B=deliverer, derived from runtime role); a map-derived
+%    deterministic rendezvous (non-delivery tile one step from a delivery,
+%    tie-broken to centre then key) so both agents agree with no
+%    negotiation; a coordinate-first handover belief (the drop is located
+%    by coordinates, the parcel id is only a hint — acks omit ids and ids
+%    do not survive drop+repickup). Choreography (deposit/collect plans +
+%    message sequencing) is the remaining step.
 %  - Metrics: messages sent/received, claim conflicts avoided.

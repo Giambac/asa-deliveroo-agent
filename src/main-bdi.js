@@ -49,6 +49,10 @@ export async function buildAgentRuntime(config, role = 'bdi') {
   });
 
   const beliefs = new BeliefBase();
+  // Explicit handover roles (26c2_8): Agent A (BDI) collects, Agent B (LLM,
+  // which interprets the mission) delivers. Deterministic, so the two
+  // agents never both pick or both deliver.
+  beliefs.handoverRole = role === 'llm' ? 'deliverer' : 'picker';
   const executor = new ActionExecutor(socket, { metrics });
   // Red-light gate: the executor freezes movement when a mission says so.
   executor.movementGate = () => beliefs.mission.movementAllowed !== false;
