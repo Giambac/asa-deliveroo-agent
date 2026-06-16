@@ -147,9 +147,21 @@ The first suite covers single-agent Agent B behavior. Team scenarios
 (`26c2_8`, `26c2_10`) are intentionally left out until the two-agent
 coordination run is tested separately.
 
-For a two-agent team run: start both agents with each other's name in
-`TEAMMATE_NAME` (or `--name`); they discover each other via a `hello`
-shout and start exchanging position heartbeats, claims and mission updates.
+For a two-agent team run, start A and B from the same `.env` but give each
+the **other's** name via `--teammate` (a shared `.env` cannot hold both
+teammate names). Keep `TOKEN` empty so each gets a fresh identity:
+
+```bash
+# terminal 1: Agent A (picker)
+node scripts/run-bdi.js --name agentA --teammate agentB --strategy mission-aware --label 26c2_8-A
+# terminal 2: Agent B (deliverer)
+node scripts/run-llm.js --name agentB --teammate agentA --strategy mission-aware --label 26c2_8-B
+```
+
+They discover each other via a `hello` shout (logged as
+`teammate_discovered`) and then exchange position heartbeats, claims and
+mission updates. Roles for the `one_pickup_another_deliver` handover
+(26c2_8) are explicit: **agentA picks up, agentB delivers**.
 
 ## Selecting a strategy
 

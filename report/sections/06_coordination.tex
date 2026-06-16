@@ -4,7 +4,11 @@
 % Content plan:
 %  - The asa-team-v1 protocol: envelope, message types (hello, position,
 %    intention, claim, mission-update, request-help, handover, ack),
-%    discovery handshake via shout.
+%    discovery handshake via shout. Two-agent runs: A and B start from one
+%    .env and pass each other's name via --teammate (a shared .env cannot
+%    hold both); discovery is logged as teammate_discovered. Validated
+%    live: A and B pair and exchange position heartbeats (~1/s) bidirec-
+%    tionally. Handover roles are explicit: agentA picks up, agentB delivers.
 %  - What coordination achieves: belief sharing (position heartbeat),
 %    target deconfliction (claims), mission propagation (Agent B
 %    interprets, Agent A receives constraints).

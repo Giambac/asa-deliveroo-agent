@@ -20,6 +20,7 @@ import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
 import { aggregateResults } from '../src/metrics/aggregate.js';
 import { RunLogger } from '../src/metrics/RunLogger.js';
 import { normalizeIdList } from '../src/utils/serialization.js';
+import { loadConfig } from '../src/config.js';
 import os from 'node:os';
 import fs from 'node:fs';
 import nodePath from 'node:path';
@@ -302,6 +303,11 @@ assert(JSON.stringify(requestedThresholdIds) === '["low"]', 'DeliverCarried sele
 
 const envelope = makeMessage('claim', { parcelId: 'p9' }, 'me1');
 assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol envelope detection');
+
+// Config overrides used by the run scripts to pair A and B from one .env
+// (each agent needs a different teammate name for discovery).
+assert(loadConfig({ teammateName: 'agentA' }).teammateName === 'agentA', 'loadConfig honors --teammate override');
+assert(loadConfig({ name: 'agentB' }).name === 'agentB', 'loadConfig honors --name override');
 
 // --- Ack normalization + belief reconciliation (live-observed server quirk) -----
 assert(

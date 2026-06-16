@@ -123,6 +123,7 @@ export class TeamProtocol {
         const isNew = this.beliefs.teammate.id !== id;
         this.beliefs.teammate.id = id;
         this.beliefs.teammate.name = msg.payload?.name ?? name;
+        if (isNew) this.logger?.log('teammate_discovered', { id, name: this.beliefs.teammate.name });
         if (isNew && !msg.payload?.isReply) {
           this.send(MessageTypes.HELLO, { name: this.beliefs.me.name, isReply: true });
         }
