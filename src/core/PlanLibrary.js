@@ -132,7 +132,23 @@ export class FollowPathGoTo extends PlanBase {
  */
 export class PddlGoTo extends PlanBase {
   static isApplicableTo(option, context) {
-    return option.type === 'go_to' && !!context?.pddlPlanner?.isEnabled();
+    if (option.type !== 'go_to' || !context?.pddlPlanner?.isEnabled()) return false;
+    if (option.pddlAllowed === false) return false;
+
+    const carrying = context.beliefs?.carried?.().length ?? 0;
+    if (carrying > 0 && context.config?.pddl?.avoidWhileCarrying !== false) return false;
+
+    const path = context.pathPlanner?.shortestPath?.(
+      {
+        x: Math.round(context.beliefs.me.x),
+        y: Math.round(context.beliefs.me.y),
+      },
+      { x: option.x, y: option.y },
+    );
+    if (!path) return false;
+
+    const minPathLength = context.config?.pddl?.minPathLength ?? 10;
+    return path.directions.length >= minPathLength;
   }
 
   async execute(option) {
@@ -194,6 +210,74 @@ export class GoPickUp extends PlanBase {
   }
 }
 
+/**
+ * Optional full-task PDDL plan: solve "go to parcel, pick it up, go to a
+ * delivery tile, put it down" as one symbolic task. This is deliberately
+ * gated by `PDDL_DELIVERY_ENABLED`: it is useful for PDDL experiments,
+ * while the normal BDI decomposition remains the default low-latency path.
+ */
+export class PddlPickUpAndDeliver extends PlanBase {
+  static isApplicableTo(option, context) {
+    return option.type === 'go_pick_up' &&
+      !!context?.pddlPlanner?.isDeliveryEnabled?.();
+  }
+
+  async execute(option) {
+    const { beliefs, executor, pddlPlanner, metrics, logger } = this.context;
+    const parcel = beliefs.parcels.get(option.parcelId);
+    if (!parcel || parcel.carriedBy) throw { reason: 'pddl-delivery-parcel-gone' };
+
+    const steps = await pddlPlanner.planDelivery(
+      { x: Math.round(beliefs.me.x), y: Math.round(beliefs.me.y) },
+      { id: parcel.id, x: option.x, y: option.y },
+    );
+
+    let picked = false;
+    for (const step of steps) {
+      this.assertRunning();
+      if (step.type === 'move') {
+        const result = await executor.move(step.direction);
+        if (result === false) {
+          metrics?.increment('failedMoves');
+          throw { reason: 'pddl-delivery-step-blocked' };
+        }
+        beliefs.me.x = result.x;
+        beliefs.me.y = result.y;
+      } else if (step.type === 'pickup') {
+        const ack = await executor.pickup();
+        if (ack.length === 0) {
+          beliefs.parcels.delete(option.parcelId);
+          throw { reason: 'pddl-delivery-pickup-empty' };
+        }
+        const ids = normalizeIdList(ack);
+        if (ids.length > 0) {
+          for (const id of ids) beliefs.markCarried(id);
+        } else {
+          beliefs.markTilePickedUp();
+        }
+        picked = true;
+        metrics?.increment('parcelsPickedUp', ack.length);
+        logger?.log('pickup', { count: ack.length, ids, via: 'pddl_delivery' });
+      } else if (step.type === 'putdown') {
+        if (!picked && beliefs.carried().length === 0) {
+          throw { reason: 'pddl-delivery-putdown-before-pickup' };
+        }
+        const dropped = await executor.putdown();
+        if (dropped.length === 0) {
+          beliefs.clearCarried();
+          throw { reason: 'pddl-delivery-putdown-empty' };
+        }
+        const ids = normalizeIdList(dropped);
+        if (ids.length > 0) beliefs.markDelivered(ids);
+        else beliefs.clearCarried();
+        metrics?.increment('parcelsDelivered', dropped.length);
+        logger?.log('delivery', { count: dropped.length, ids, via: 'pddl_delivery' });
+      }
+    }
+    return true;
+  }
+}
+
 export class DeliverCarried extends PlanBase {
   static isApplicableTo(option) {
     return option.type === 'deliver_carried';
@@ -213,6 +297,7 @@ export class DeliverCarried extends PlanBase {
       key: `go_to:${target.tile.x},${target.tile.y}`,
       x: target.tile.x,
       y: target.tile.y,
+      pddlAllowed: false,
     });
     this.assertRunning();
 
@@ -381,6 +466,7 @@ export class Wait extends PlanBase {
  */
 export function buildDefaultPlanLibrary() {
   const library = new PlanLibrary();
+  library.register(PddlPickUpAndDeliver);
   library.register(GoPickUp);
   library.register(DeliverCarried);
   library.register(GoToMissionTarget);

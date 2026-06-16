@@ -1,5 +1,10 @@
 import 'dotenv/config';
 
+function positiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 /**
  * Central runtime configuration.
  *
@@ -53,9 +58,20 @@ export function loadConfig(overrides = {}) {
     // --- PDDL ---------------------------------------------------------------
     pddl: {
       enabled: (env.PDDL_ENABLED || 'false').toLowerCase() === 'true',
+      deliveryEnabled: (env.PDDL_DELIVERY_ENABLED || 'false').toLowerCase() === 'true',
       // Safety bound: do not generate PDDL problems for reachable regions
       // larger than this many tiles (the online solver gets slow).
-      maxTiles: 1600,
+      maxTiles: positiveInt(env.PDDL_MAX_TILES, 1600),
+      // Fail fast and let the next plan (BFS) take over when the online
+      // solver is slower than the game can tolerate.
+      timeoutMs: positiveInt(env.PDDL_TIMEOUT_MS, 2500),
+      // Do not spend a multi-second solver call on short paths. BFS is
+      // essentially instant there, and live tests showed fixed PDDL
+      // overhead around 3 s even for one-step plans.
+      minPathLength: positiveInt(env.PDDL_MIN_PATH_LENGTH, 10),
+      // Delivery urgency beats symbolic elegance: while carrying parcels,
+      // reward decay makes the online-planner delay especially expensive.
+      avoidWhileCarrying: (env.PDDL_AVOID_WHILE_CARRYING || 'true').toLowerCase() !== 'false',
       // PAAS_HOST / PAAS_PATH are read directly by @unitn-asa/pddl-client.
     },
 

@@ -2,12 +2,14 @@
 % TODO: fill after PDDL experiments. (PDDL use and integration = 20%.)
 % Content plan (the exam asks to identify WHERE and WHEN PDDL helps):
 %  - Where: PDDL as a plan-library member serving the go_to intention;
-%    the domain (move actions on a directed tile graph) and how arrow
-%    tiles are encoded by omitting edges.
+%    the domain (move actions on a directed tile graph plus pickup/putdown
+%    for one-parcel delivery problems) and how arrow tiles are encoded by
+%    omitting edges.
 %  - When: deterministic, fully-believed subproblems; why the outer loop
 %    is a poor fit (per-frame world changes, online solver latency).
-%  - Problem generation from beliefs (reachable region, size bound).
+%  - Problem generation from beliefs (reachable region, size bound,
+%    parcel-at/delivery predicates, delivered goal).
 %  - Measured comparison: BFS plan vs PDDL plan (latency, plan length,
 %    failure rate) from plannerCalls/plannerFailures logs.
 %  - Discussion of problem complexity, as required.
-%  - TODO(optional): extended domain with pickup/putdown or crate pushing.
+%  - TODO(optional): crate pushing / dynamic obstacle variants.

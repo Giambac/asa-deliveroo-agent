@@ -72,7 +72,10 @@ Environment variables (see `.env.example` for the full commented list):
   re-attach to the same in-game agent;
 - `STRATEGY` — strategy id (see below); `RUN_LABEL` — scenario label for logs;
 - `TEAMMATE_NAME` — the other agent's name (team handshake filter);
-- `PDDL_ENABLED`, `PAAS_HOST`, `PAAS_PATH` — PDDL toggle and solver;
+- `PDDL_ENABLED`, `PDDL_DELIVERY_ENABLED`, `PDDL_MAX_TILES`,
+  `PDDL_TIMEOUT_MS`, `PDDL_MIN_PATH_LENGTH`,
+  `PDDL_AVOID_WHILE_CARRYING`, `PAAS_HOST`, `PAAS_PATH` — PDDL toggles,
+  safety bounds and solver;
 - `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `LLM_MODEL` — LLM provider
   (optional; without it Agent B uses deterministic mission parsing).
 
@@ -168,6 +171,15 @@ interpretations, protocol messages) and — when stopped via
   acks; validated tool registry for LLM tool-loop experiments.
 - PDDL: domain + problem generation from beliefs, online solver wrapper,
   registered as an alternative `go_to` plan when `PDDL_ENABLED=true`.
+  The domain also models single-parcel `pickup`/`putdown`, and
+  `PddlPlanner.buildDeliveryProblem(...)` can emit full collect-and-deliver
+  problems for BFS-vs-PDDL experiments. When both `PDDL_ENABLED=true` and
+  `PDDL_DELIVERY_ENABLED=true`, the plan library tries this full PDDL
+  pickup-and-deliver plan before the normal BDI pickup plan, with fallback
+  on failure. PDDL calls are bounded by `PDDL_MAX_TILES` and
+  `PDDL_TIMEOUT_MS`, and `PddlGoTo` is gated by
+  `PDDL_MIN_PATH_LENGTH` / `PDDL_AVOID_WHILE_CARRYING`, so short paths
+  and urgent delivery paths go straight to BFS.
 - Metrics, structured run logs, experiment runner, report skeleton.
 
 ## What remains for future phases
@@ -178,8 +190,11 @@ interpretations, protocol messages) and — when stopped via
 2. **Challenge 2 choreography** — full one-pickup-another-deliver
    handover (rendezvous negotiation via `ask`, putdown-before-pickup
    sequencing) and the team go-to-and-wait mission (26c2_10).
-3. **PDDL depth** — extend the domain with pickup/putdown to plan whole
-   collect-and-deliver sequences; measure BFS vs PDDL for the report.
+3. **PDDL depth** — run and measure full collect-and-deliver PDDL
+   task plans against BDI+BFS on live maps; keep it disabled by default
+   unless latency is acceptable. Tune `PDDL_TIMEOUT_MS` per scenario when
+   collecting PDDL evidence, and tune `PDDL_MIN_PATH_LENGTH` to trade
+   PDDL evidence against live reactivity.
 4. **LLM tool loop** — optionally let the LLM drive the `tools.js`
    registry for open-ended requests (lab8 07-pattern).
 5. **Experiments + report** — ≥5 runs per (map, strategy), notebook

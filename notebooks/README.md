@@ -4,8 +4,9 @@ Optional analysis notebooks only — **never required for runtime behavior**
 (blueprint constraint).
 
 Intended use: load `experiments/results/*.json` and `experiments/logs/*.jsonl`,
-produce the score-over-time plots and strategy comparison tables for the
-report (section 07_experiments).
+produce the score-over-time plots, strategy comparison tables, and
+PDDL-vs-BFS planner summaries (`pddl_plan`, `pddl_delivery_plan`,
+`pddl_failure`) for the report (section 07_experiments).
 
 Example data already exists: the `live-smoke*` validation runs in
 `experiments/results/` and `experiments/logs/` (see

@@ -7,7 +7,8 @@ Run outputs live here:
   `score`, `pickup`, `delivery` (both with `count` and normalized `ids` —
   `ids` may be empty on server versions whose acks carry no id field),
   `intention_started/done/failed/aborted`, `plan_failed`, `pddl_plan`,
-  `pddl_failure`, `mission_interpreted`, `mission_applied`, `msg_in`, `msg_out`.
+  `pddl_delivery_plan`, `pddl_failure`, `mission_interpreted`,
+  `mission_applied`, `msg_in`, `msg_out`.
 - `results/` — one JSON summary per run (final score, counters, score timeline),
   written when the agent stops (`scripts/run-experiment.js` does this automatically).
 
