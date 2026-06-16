@@ -43,8 +43,9 @@
 %    heartbeats and holds together. On timeout (teammate never arrives)
 %    the plan aborts instead of falsely completing, keeping the mission
 %    active to retry. Validated live: A->(16,5), B->(19,2), both within
-%    distance 3 of (19,5), fixture awarded 500 pts. Honest caveat: that
-%    run interpreted via the deterministic fallback (the LLM request timed
-%    out); the tolerance field is in the LLM schema but a clean
-%    source=llm run on VPN is still worth recording.
+%    distance 3 of (19,5), fixture awarded 500 pts. The first run
+%    interpreted via the deterministic fallback (the LLM request timed
+%    out); a later VPN run confirmed clean source=llm interpretation
+%    (llama-3.3-70b, 2545 ms: kind go_to, target (19,5), tolerance 3,
+%    holdAtTarget) reaching (16,5) and awarding the 500 pt bonus.
 %  - Metrics: messages sent/received, claim conflicts avoided.
