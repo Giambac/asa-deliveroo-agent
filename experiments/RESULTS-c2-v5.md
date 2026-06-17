@@ -82,10 +82,10 @@ precedes the `llm_call` completion by ~3 s.
 - **Local server, not the public online server.** This is the correct
   testbed for mission handling (real LLM + real mission agents). The main
   online delta is **crates**: the architecture now models them (dynamic
-  occupancy + a deterministic single-tile push, validated offline — see
-  README "What is implemented now"), but live crate performance on the
-  course server has not yet been re-measured. This remains orthogonal to
-  the level 1–2 mission compliance reported here.
+  occupancy + a deterministic single-tile push), validated offline and
+  confirmed live on `crates_one_way` (score 43, 1 crate pushed, up from 0 —
+  see `RESULTS-crates.md`). This remains orthogonal to the level 1–2 mission
+  compliance reported here.
 - **Conservative, non-undoable pre-apply.** A regex false-positive
   "forbidden" would keep a few tiles blocked until the next mission (no
   `GridGraph.unblock`). For the known templates regex and LLM agree, and

@@ -80,10 +80,14 @@ there either (validating the reconciliation layer). The live map was
 crates, so it found most tiles unreachable and scored~0 --- a compatibility
 limit, not a strategy benchmark. Crate sensing, occupancy-aware pathfinding and
 a deterministic single-tile push (Section~\ref{sec:bdi}) were subsequently
-added and are validated by the offline smoke suite (graph parsing of
+added, validated by the offline smoke suite (graph parsing of
 type-\texttt{5}/\texttt{5!}, crate-blocked BFS, \texttt{push\_crate} generation
-and the \texttt{PushCrate} plan happy/rejected paths); live crate performance on
-the course server has not yet been re-measured.
+and the \texttt{PushCrate} plan happy/rejected paths) and confirmed live: a
+120\,s run on \texttt{crates\_one\_way} scored~43 with two deliveries and one
+successful crate push (logged \texttt{crate\_pushed}, zero rejected pushes),
+turning the previous 0 into a working run. The map's tight, mostly-walled layout
+still drives heavy re-deliberation (many targets remain unreachable), so it is a
+proof of capability rather than a tuned benchmark.
 
 \paragraph{Challenge~2 (Agent~B) validation.} On the local server with the real
 course LLM gateway (\texttt{llama-3.3-70b} over VPN, so \texttt{source=llm} rows

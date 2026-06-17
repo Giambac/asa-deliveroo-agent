@@ -51,6 +51,8 @@ setTimeout(() => {
   console.log(`final score:        ${summary.finalScore}`);
   console.log(`parcels delivered:  ${summary.counters.parcelsDelivered}`);
   console.log(`parcels picked up:  ${summary.counters.parcelsPickedUp}`);
+  console.log(`crates pushed:      ${summary.counters.cratesPushed}`);
+  console.log(`failed pushes:      ${summary.counters.failedPushes}`);
   console.log(`intention changes:  ${summary.counters.intentionChanges}`);
   console.log(`failed actions:     ${summary.counters.failedActions}`);
   console.log(`results written to: ${resultFile}`);

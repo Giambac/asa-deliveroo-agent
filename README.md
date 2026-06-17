@@ -396,10 +396,12 @@ verified at runtime on the challenge server:
   option/plan (see "What is implemented now"). A 2026-06-14 course-server
   compatibility check on `crates_one_way` (9×9, *before* crate support)
   found most tiles unreachable and scored 0; crate support now removes that
-  blocker offline, but **live crate performance has not yet been
-  re-measured** on the course server — the support is validated by offline
-  smoke tests. Advanced multi-crate / chained Sokoban planning remains out
-  of scope (one push per plan execution).
+  blocker, **confirmed live** — a 120 s run on `crates_one_way` scored 43
+  with 2 deliveries and 1 logged `crate_pushed` (0 rejected pushes), up from
+  0 (see `experiments/RESULTS-crates.md`). The map still causes heavy
+  re-deliberation, so it is a capability proof, not a tuned benchmark.
+  Advanced multi-crate / chained Sokoban planning remains out of scope (one
+  push per plan execution).
 - **Mission text formats** in the deterministic fallback parser follow
   the Challenge 2 config descriptions; coordinate *ranges* like
   "(13,15)–(16,15)" are parsed as the listed endpoints only (the LLM
