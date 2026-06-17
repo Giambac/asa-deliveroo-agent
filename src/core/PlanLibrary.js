@@ -659,6 +659,72 @@ export class HandoverCollect extends PlanBase {
   }
 }
 
+/**
+ * Push a single blocking crate one tile aside (deterministic Sokoban move).
+ * Pushing has no dedicated API: the server moves the crate one tile when the
+ * agent issues a normal move INTO it and the tile beyond is an empty
+ * type-5 pushable zone. So this plan walks to the approach tile, re-checks
+ * the push is still legal (beliefs/graph may have changed during the walk),
+ * issues exactly ONE move in the push direction, and either commits the new
+ * crate position or aborts — never looping on a rejected push.
+ */
+export class PushCrate extends PlanBase {
+  static isApplicableTo(option) {
+    return option.type === 'push_crate';
+  }
+
+  async execute(option) {
+    const { beliefs, executor, metrics, logger } = this.context;
+    const graph = beliefs.graph;
+    const { crateId, x, y, pushDir, approachTile, beyond } = option;
+
+    // 1. reach the approach tile (the crate-free tile opposite the push dir).
+    if (Math.round(beliefs.me.x) !== approachTile.x || Math.round(beliefs.me.y) !== approachTile.y) {
+      await this.subIntention({
+        type: 'go_to',
+        key: `go_to:${approachTile.x},${approachTile.y}`,
+        x: approachTile.x,
+        y: approachTile.y,
+      });
+      this.assertRunning();
+    }
+
+    // 2. re-check: the crate must still be where we planned, and the push
+    // must still be legal (destination an empty pushable zone).
+    const crate = beliefs.crates.get(crateId);
+    if (!crate || Math.round(crate.x) !== x || Math.round(crate.y) !== y) {
+      throw { reason: 'push-stale' };
+    }
+    if (!graph?.isPushZone(beyond.x, beyond.y) || graph.hasCrate(beyond.x, beyond.y)) {
+      throw { reason: 'push-stale' };
+    }
+
+    // 3. one push attempt: the move shoves the crate iff the server agrees.
+    const result = await executor.move(pushDir);
+    if (result === false) {
+      metrics?.increment('failedPushes');
+      logger?.log('push_blocked', { crateId, from: { x, y }, dir: pushDir });
+      throw { reason: 'push-blocked' };
+    }
+
+    // 4. commit: the crate advanced one tile, and so did the agent (onto the
+    // crate's old tile). Keep beliefs and graph occupancy in sync.
+    graph.clearCrate(x, y);
+    graph.setCrate(beyond.x, beyond.y, crateId);
+    const crateBelief = beliefs.crates.get(crateId);
+    if (crateBelief) {
+      crateBelief.x = beyond.x;
+      crateBelief.y = beyond.y;
+      crateBelief.lastSeen = Date.now();
+    }
+    beliefs.me.x = result.x;
+    beliefs.me.y = result.y;
+    metrics?.increment('cratesPushed');
+    logger?.log('crate_pushed', { crateId, from: { x, y }, to: beyond, dir: pushDir });
+    return true;
+  }
+}
+
 export class Explore extends PlanBase {
   static isApplicableTo(option) {
     return option.type === 'explore';
@@ -720,6 +786,7 @@ export function buildDefaultPlanLibrary() {
   library.register(GoToMissionTarget);
   library.register(HandoverDeposit);
   library.register(HandoverCollect);
+  library.register(PushCrate);
   library.register(Explore);
   library.register(Wait);
   library.register(PddlGoTo); // applicability self-checks pddl enablement

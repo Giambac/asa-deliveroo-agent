@@ -1,5 +1,12 @@
 import { keyOf } from '../utils/serialization.js';
-import { DELIVEROO_DOMAIN, DOMAIN_NAME, ACTION_TO_DIRECTION } from './pddlDomain.js';
+import {
+  DELIVEROO_DOMAIN,
+  DOMAIN_NAME,
+  ACTION_TO_DIRECTION,
+  DELIVEROO_CRATES_DOMAIN,
+  CRATES_DOMAIN_NAME,
+  PUSH_ACTION_TO_DIRECTION,
+} from './pddlDomain.js';
 
 /**
  * Wrapper around the online PDDL solver (@unitn-asa/pddl-client).
@@ -41,6 +48,15 @@ export class PddlPlanner {
 
   isDeliveryEnabled() {
     return !!this.config.pddl?.enabled && !!this.config.pddl?.deliveryEnabled;
+  }
+
+  /**
+   * Whether the optional PDDL crate (Sokoban) planner path is enabled. Off
+   * by default and independent of the runtime deterministic push: this is
+   * for experiments/report only. Any failure falls back to BDI/BFS.
+   */
+  isCratesEnabled() {
+    return !!this.config.crates?.pddlEnabled;
   }
 
   /**
@@ -191,6 +207,104 @@ export class PddlPlanner {
     }
   }
 
+  /**
+   * Generate a crate-aware (Sokoban) PDDL problem: navigate to `goal`,
+   * pushing crates out of the way as needed. The reachable region is
+   * computed *ignoring* current crate occupancy (so tiles behind crates are
+   * objects the planner can open up); crate positions are then asserted as
+   * `(crate-at ...)`, type-5 tiles as `(pushable ...)`, and every crate-free
+   * region tile as `(clear ...)`. Bounded by `config.crates.maxTiles`.
+   *
+   * @param {{x:number,y:number}} from
+   * @param {{x:number,y:number}} goal
+   */
+  buildCrateProblem(from, goal) {
+    const graph = this.beliefs.graph;
+    if (!graph) throw new Error('map not loaded yet');
+
+    const startKey = keyOf(from.x, from.y);
+    const goalKey = keyOf(goal.x, goal.y);
+    const maxTiles = this.config.crates?.maxTiles ?? 1600;
+
+    // Snapshot and lift crate occupancy so the region (and its movement
+    // edges) spans tiles currently behind crates; restored in `finally`.
+    const occupied = [...this.beliefs.crates.values()].map((c) => ({
+      id: c.id, x: Math.round(c.x), y: Math.round(c.y),
+    }));
+    for (const c of occupied) graph.clearCrate(c.x, c.y);
+    try {
+      const region = this.#reachableRegion(startKey, maxTiles);
+      if (region.size > maxTiles) throw new Error(`problem too large (> ${maxTiles} tiles)`);
+      if (!region.has(goalKey)) throw new Error(`target ${goalKey} unreachable from ${startKey}`);
+
+      const crateInRegion = occupied.filter((c) => region.has(keyOf(c.x, c.y)));
+      const crateKeys = new Set(crateInRegion.map((c) => keyOf(c.x, c.y)));
+
+      const tileObjects = [...region].map(this.#tileObject);
+      const crateObjects = crateInRegion.map((c) => this.#crateObject(c.id));
+      const objects = tileObjects.concat(crateObjects).join(' ');
+
+      const init = [
+        `(at ${this.#tileObject(startKey)})`,
+        ...crateInRegion.flatMap((c) => [
+          `(crate ${this.#crateObject(c.id)})`,
+          `(crate-at ${this.#crateObject(c.id)} ${this.#tileObject(keyOf(c.x, c.y))})`,
+        ]),
+        ...[...region]
+          .filter((key) => graph.tiles.get(key)?.pushZone)
+          .map((key) => `(pushable ${this.#tileObject(key)})`),
+        ...[...region]
+          .filter((key) => !crateKeys.has(key))
+          .map((key) => `(clear ${this.#tileObject(key)})`),
+        ...this.#movementPredicates(region),
+      ];
+
+      return `
+(define (problem deliveroo-crates)
+  (:domain ${CRATES_DOMAIN_NAME})
+  (:objects ${objects})
+  (:init ${init.join(' ')})
+  (:goal (at ${this.#tileObject(goalKey)}))
+)
+`.trim();
+    } finally {
+      for (const c of occupied) graph.setCrate(c.x, c.y, c.id);
+    }
+  }
+
+  /**
+   * Optional gated crate planner: solve a crate-aware navigation problem and
+   * return symbolic steps ({type:'move'|'push', direction}). Used only when
+   * `isCratesEnabled()`; any failure throws so the caller falls back to the
+   * deterministic BDI push / BFS.
+   * @returns {Promise<object[]>}
+   */
+  async planCratePath(from, goal) {
+    this.metrics?.increment('plannerCalls');
+    const startedAt = Date.now();
+    try {
+      const problem = this.buildCrateProblem(from, goal);
+      const solver = await this.#loadSolver();
+      const steps = await this.#solveWithTimeout(solver, DELIVEROO_CRATES_DOMAIN, problem);
+      if (!steps || steps.length === 0) throw new Error('solver returned no plan');
+      const parsed = this.#parseSteps(steps);
+      this.logger?.log('pddl_crate_plan', {
+        from, goal,
+        steps: parsed.length,
+        durationMs: Date.now() - startedAt,
+      });
+      return parsed;
+    } catch (error) {
+      this.metrics?.increment('plannerFailures');
+      this.logger?.log('pddl_failure', {
+        from, goal,
+        error: String(error?.message ?? error),
+        durationMs: Date.now() - startedAt,
+      });
+      throw error;
+    }
+  }
+
   #reachableRegion(startKey, maxTiles) {
     const graph = this.beliefs.graph;
     const region = new Set([startKey]);
@@ -231,12 +345,20 @@ export class PddlPlanner {
     return `p_${String(id).replace(/[^a-zA-Z0-9_]/g, '_')}`;
   }
 
+  #crateObject(id) {
+    return `c_${String(id).replace(/[^a-zA-Z0-9_]/g, '_')}`;
+  }
+
   #parseSteps(steps) {
     return steps.map((step) => {
       const action = String(step.action).toLowerCase();
       const args = this.#stepArgs(step);
       if (ACTION_TO_DIRECTION[action]) {
         return { type: 'move', direction: ACTION_TO_DIRECTION[action], raw: step };
+      }
+      if (PUSH_ACTION_TO_DIRECTION[action]) {
+        // A push is executed by the same executor.move into the crate.
+        return { type: 'push', direction: PUSH_ACTION_TO_DIRECTION[action], crate: args[0], raw: step };
       }
       if (action === 'pickup') return { type: 'pickup', parcel: args[0], tile: args[1], raw: step };
       if (action === 'putdown') return { type: 'putdown', parcel: args[0], tile: args[1], raw: step };

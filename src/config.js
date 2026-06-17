@@ -80,6 +80,19 @@ export function loadConfig(overrides = {}) {
       // PAAS_HOST / PAAS_PATH are read directly by @unitn-asa/pddl-client.
     },
 
+    // --- crate pushing (Sokoban maps) ---------------------------------------
+    crates: {
+      // Deterministic crate modelling + the push_crate option/plan. On by
+      // default (inert when no crate is sensed); a kill-switch lets a run
+      // disable it without code changes.
+      enabled: (env.CRATES_ENABLED || 'true').toLowerCase() !== 'false',
+      // Optional PDDL crate planner path (experiments/report only). Off by
+      // default, mirroring PDDL_DELIVERY_ENABLED.
+      pddlEnabled: (env.PDDL_CRATES_ENABLED || 'false').toLowerCase() === 'true',
+      maxTiles: positiveInt(env.PDDL_CRATES_MAX_TILES, 1600),
+      timeoutMs: positiveInt(env.PDDL_CRATES_TIMEOUT_MS, 2500),
+    },
+
     // --- LLM (Agent B) ------------------------------------------------------
     llm: {
       baseUrl: env.LITELLM_BASE_URL || null,

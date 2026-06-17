@@ -14,8 +14,9 @@ import { OptionGenerator } from '../src/core/OptionGenerator.js';
 import { createStrategy } from '../src/strategies/index.js';
 import { MissionInterpreter } from '../src/llm/MissionInterpreter.js';
 import { PddlPlanner } from '../src/planning/PddlPlanner.js';
-import { DELIVEROO_DOMAIN } from '../src/planning/pddlDomain.js';
+import { DELIVEROO_DOMAIN, DELIVEROO_CRATES_DOMAIN, PUSH_ACTION_TO_DIRECTION } from '../src/planning/pddlDomain.js';
 import { buildDefaultPlanLibrary, chooseHoldTile } from '../src/core/PlanLibrary.js';
+import { GridGraph } from '../src/planning/GridGraph.js';
 import { makeMessage, isProtocolMessage } from '../src/communication/MessageTypes.js';
 import { MetricsCollector } from '../src/metrics/MetricsCollector.js';
 import { aggregateResults } from '../src/metrics/aggregate.js';
@@ -552,6 +553,167 @@ try {
 } catch (err) { pddlMidHandoverReason = err?.reason; }
 assert(pddlMidHandoverReason === 'pddl-delivery-mission-active', 'PDDL delivery aborts when a handover starts mid-plan');
 assert(!pddlMidHandoverPutdown, 'PDDL delivery does not putdown during an active handover');
+
+// --- Crate pushing (Sokoban) ---------------------------------------------------
+// Tile parsing: '5' and '5!' are walkable pushable zones, '!' stripped; '0' wall.
+const cg = new GridGraph(1, 3, [
+  { x: 0, y: 0, type: '5' },
+  { x: 0, y: 1, type: '5!' },
+  { x: 0, y: 2, type: '0' },
+]);
+assert(cg.isPushZone(0, 0) && cg.tileAt(0, 0).walkable, "GridGraph parses '5' as walkable pushable zone");
+assert(cg.isPushZone(0, 1) && cg.tileAt(0, 1).walkable && cg.tileAt(0, 1).type === '5', "GridGraph strips '!' from '5!' (pushable, type '5')");
+assert(!cg.tileAt(0, 2).walkable && !cg.isPushZone(0, 2), "GridGraph keeps '0' a non-pushable wall");
+
+// Crate map A (legal push): a corridor where a crate at (1,1) seals the
+// agent at (1,0); pushing it UP into the type-5 pocket at (1,2) opens the
+// row and reveals the parcel at (2,1).
+//   y=2:  0 5 0
+//   y=1:  3 3 3
+//   y=0:  0 3 0
+const crateTypes = {
+  '0,0': '0', '1,0': '3', '2,0': '0',
+  '0,1': '3', '1,1': '3', '2,1': '3',
+  '0,2': '0', '1,2': '5', '2,2': '0',
+};
+const crateTiles = Object.entries(crateTypes).map(([k, type]) => {
+  const [x, y] = k.split(',').map(Number);
+  return { x, y, type };
+});
+function makeCrateBeliefs() {
+  const b = new BeliefBase();
+  b.loadMap(3, 3, crateTiles);
+  b.updateMe({ id: 'me1', name: 'tester', x: 1, y: 0, score: 0 });
+  b.updateConfig({ CLOCK: 50, GAME: { parcels: { decaying_event: '1s' }, player: { movement_duration: 100 } } });
+  return b;
+}
+
+// A sensed crate blocks BFS; clearing it reopens the tile.
+const cb = makeCrateBeliefs();
+const cbPlanner = new PathPlanner(cb);
+cb.updateSensing({
+  positions: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }],
+  parcels: [{ id: 'cp', x: 2, y: 1, reward: 40, carriedBy: null }],
+  crates: [{ id: 'k1', x: 1, y: 1 }],
+});
+assert(cb.crates.has('k1') && cb.graph.hasCrate(1, 1), 'sensing.crates stores the crate and mirrors graph occupancy');
+assert(cbPlanner.shortestPath({ x: 1, y: 0 }, { x: 2, y: 1 }) === null, 'a sensed crate blocks BFS pathfinding');
+cb.graph.clearCrate(1, 1);
+assert(cbPlanner.shortestPath({ x: 1, y: 0 }, { x: 2, y: 1 }) !== null, 'clearing the crate reopens the path');
+// Negative evidence: a visible-but-empty crate tile clears stale occupancy.
+cb.graph.setCrate(1, 1, 'k1');
+cb.updateSensing({ positions: [{ x: 1, y: 1 }], parcels: [], crates: [] });
+assert(!cb.crates.has('k1') && !cb.graph.hasCrate(1, 1), 'crate cleared when its tile is visible but no crate is sensed');
+
+// OptionGenerator emits push_crate for a reachable legal push.
+const cOpt = makeCrateBeliefs();
+cOpt.updateSensing({
+  positions: [{ x: 1, y: 0 }],
+  parcels: [{ id: 'cp', x: 2, y: 1, reward: 40, carriedBy: null }],
+  crates: [{ id: 'k1', x: 1, y: 1 }],
+});
+const cGen = new OptionGenerator({ crates: { enabled: true } });
+const pushOpt = cGen.generate(cOpt).find((o) => o.type === 'push_crate');
+assert(!!pushOpt, 'OptionGenerator emits push_crate when a parcel is unreachable behind a crate');
+assert(pushOpt && pushOpt.pushDir === 'up' && pushOpt.approachTile.x === 1 && pushOpt.approachTile.y === 0,
+  'push_crate has the correct push direction and approach tile');
+assert(pushOpt && pushOpt.beyond.x === 1 && pushOpt.beyond.y === 2, 'push_crate targets the type-5 pocket as the destination');
+// Generation must not leak graph mutations (simulation is reverted).
+assert(cOpt.graph.hasCrate(1, 1) && !cOpt.graph.hasCrate(1, 2), 'push_crate generation restores graph crate occupancy');
+
+// No push_crate for an illegal push: destination not a pushable zone.
+const illegalTypes = { ...crateTypes, '1,2': '3' }; // pocket is now a plain tile
+const illegalTiles = Object.entries(illegalTypes).map(([k, type]) => {
+  const [x, y] = k.split(',').map(Number);
+  return { x, y, type };
+});
+const cIll = new BeliefBase();
+cIll.loadMap(3, 3, illegalTiles);
+cIll.updateMe({ id: 'me1', name: 'tester', x: 1, y: 0, score: 0 });
+cIll.updateConfig({ CLOCK: 50, GAME: { parcels: { decaying_event: '1s' }, player: { movement_duration: 100 } } });
+cIll.updateSensing({
+  positions: [{ x: 1, y: 0 }],
+  parcels: [{ id: 'cp', x: 2, y: 1, reward: 40, carriedBy: null }],
+  crates: [{ id: 'k1', x: 1, y: 1 }],
+});
+assert(!cGen.generate(cIll).some((o) => o.type === 'push_crate'), 'no push_crate when the tile behind the crate is not a pushable zone');
+
+// The kill-switch disables push_crate generation entirely.
+const cDisabled = new OptionGenerator({ crates: { enabled: false } });
+assert(!cDisabled.generate(cOpt).some((o) => o.type === 'push_crate'), 'CRATES_ENABLED=false suppresses push_crate options');
+
+// Strategy ranks push_crate above explore/wait when unblockValue is positive.
+const cStratHelpers = new PathPlanner(cOpt).scoringHelpers();
+const pushUtil = createStrategy('reward-distance').utility(pushOpt, cOpt, cStratHelpers);
+assert(Number.isFinite(pushUtil) && pushUtil > 1, 'push_crate utility is finite and beats explore (1) when unblockValue is positive');
+
+// isStillValid: valid while the crate is on the planned tile, invalid once gone.
+assert(OptionGenerator.isStillValid(pushOpt, cOpt), 'push_crate stays valid while the crate is on the planned tile');
+cOpt.crates.delete('k1');
+assert(!OptionGenerator.isStillValid(pushOpt, cOpt), 'push_crate becomes invalid once the crate is gone');
+
+// PushCrate happy path: the agent is on the approach tile, one move pushes the
+// crate, occupancy + position update, cratesPushed increments.
+const cHappy = makeCrateBeliefs();
+cHappy.updateSensing({ positions: [{ x: 1, y: 0 }], parcels: [], crates: [{ id: 'k1', x: 1, y: 1 }] });
+const cHappyMetrics = new MetricsCollector();
+const cLib = buildDefaultPlanLibrary();
+const PushPlan = cLib.plansFor({ type: 'push_crate' }, {})[0];
+assert(PushPlan && PushPlan.name === 'PushCrate', 'PushCrate plan serves push_crate');
+const happyOption = { type: 'push_crate', key: 'push_crate:k1', crateId: 'k1', x: 1, y: 1, pushDir: 'up', approachTile: { x: 1, y: 0 }, beyond: { x: 1, y: 2 }, unblockValue: 40 };
+let pushMoveDir = null;
+await new PushPlan({
+  beliefs: cHappy,
+  executor: { move: async (dir) => { pushMoveDir = dir; return { x: 1, y: 1 }; } },
+  pathPlanner: new PathPlanner(cHappy),
+  planLibrary: cLib,
+  metrics: cHappyMetrics,
+}).execute(happyOption);
+assert(pushMoveDir === 'up', 'PushCrate issues executor.move in the push direction');
+assert(!cHappy.graph.hasCrate(1, 1) && cHappy.graph.hasCrate(1, 2), 'PushCrate moves the crate occupancy from (1,1) to (1,2)');
+assert(cHappy.crates.get('k1').x === 1 && cHappy.crates.get('k1').y === 2, 'PushCrate updates the crate belief position');
+assert(Math.round(cHappy.me.x) === 1 && Math.round(cHappy.me.y) === 1, 'PushCrate advances the agent onto the crate old tile');
+assert(cHappyMetrics.counters.cratesPushed === 1, 'PushCrate increments cratesPushed on success');
+
+// PushCrate rejected move: throws push-blocked, no occupancy corruption.
+const cRej = makeCrateBeliefs();
+cRej.updateSensing({ positions: [{ x: 1, y: 0 }], parcels: [], crates: [{ id: 'k1', x: 1, y: 1 }] });
+const cRejMetrics = new MetricsCollector();
+let pushReason = null;
+try {
+  await new PushPlan({
+    beliefs: cRej,
+    executor: { move: async () => false },
+    pathPlanner: new PathPlanner(cRej),
+    planLibrary: cLib,
+    metrics: cRejMetrics,
+  }).execute({ ...happyOption });
+} catch (err) { pushReason = err?.reason; }
+assert(pushReason === 'push-blocked', 'PushCrate throws push-blocked on a rejected move');
+assert(cRej.graph.hasCrate(1, 1) && !cRej.graph.hasCrate(1, 2), 'a rejected push does not corrupt crate occupancy');
+assert(cRejMetrics.counters.failedPushes === 1, 'PushCrate increments failedPushes on a rejected move');
+
+// PDDL crate domain + problem generation (gated; offline structural checks).
+assert(DELIVEROO_CRATES_DOMAIN.includes('(:action push-'), 'crate PDDL domain defines push actions');
+assert(PUSH_ACTION_TO_DIRECTION['push-up'] === 'up' && PUSH_ACTION_TO_DIRECTION['push-right'] === 'right',
+  'push-* actions map to game move directions (executed by executor.move)');
+const cPddlBeliefs = makeCrateBeliefs();
+cPddlBeliefs.updateSensing({ positions: [{ x: 1, y: 0 }], parcels: [], crates: [{ id: 'k1', x: 1, y: 1 }] });
+const cPddl = new PddlPlanner({
+  beliefs: cPddlBeliefs,
+  config: { crates: { pddlEnabled: true, maxTiles: 100 } },
+  metrics: new MetricsCollector(),
+});
+assert(cPddl.isCratesEnabled(), 'PddlPlanner.isCratesEnabled reflects config.crates.pddlEnabled');
+const crateProblem = cPddl.buildCrateProblem({ x: 1, y: 0 }, { x: 2, y: 1 });
+assert(crateProblem.includes('(crate c_k1)'), 'crate problem emits the crate object');
+assert(crateProblem.includes('(crate-at c_k1 t_1_1)'), 'crate problem emits crate-at fact');
+assert(crateProblem.includes('(pushable t_1_2)'), 'crate problem emits pushable (type-5) tile');
+assert(crateProblem.includes('(clear t_1_0)'), 'crate problem emits clear facts for crate-free tiles');
+assert(!crateProblem.includes('(clear t_1_1)'), 'crate problem does not mark the crate tile clear');
+assert(/\((up|down|left|right) t_/.test(crateProblem), 'crate problem emits movement (push) edges');
+// Generation must not leak: graph crate occupancy is restored afterwards.
+assert(cPddlBeliefs.graph.hasCrate(1, 1), 'buildCrateProblem restores graph crate occupancy');
 
 const envelope = makeMessage('claim', { parcelId: 'p9' }, 'me1');
 assert(isProtocolMessage(envelope) && !isProtocolMessage('free text'), 'protocol envelope detection');

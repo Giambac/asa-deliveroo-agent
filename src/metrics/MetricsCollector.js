@@ -8,6 +8,8 @@ export class MetricsCollector {
     parcelsPickedUp: 0,
     parcelsDelivered: 0,
     pickupsLost: 0,
+    cratesPushed: 0,
+    failedPushes: 0,
     failedMoves: 0,
     failedActions: 0,
     intentionChanges: 0,

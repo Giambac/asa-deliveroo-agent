@@ -23,6 +23,13 @@ export class BeliefBase {
   /** parcelId -> {id, x, y, reward, carriedBy, lastSeen, rewardAtLastSeen} */
   parcels = new Map();
 
+  /**
+   * crateId -> {id, x, y, lastSeen}. Crates are pushable obstacles sensed
+   * dynamically via `sensing.crates`; their occupancy is mirrored onto the
+   * graph (setCrate/clearCrate) so pathfinding routes around them.
+   */
+  crates = new Map();
+
   /** agentId -> {id, name, teamId, x, y, score, lastSeen} (others only) */
   agents = new Map();
 
@@ -82,7 +89,9 @@ export class BeliefBase {
 
   /**
    * Revise dynamic beliefs from a `sensing` event
-   * ({positions, agents, parcels, crates}).
+   * ({positions, agents, parcels, crates}). Crates are pushable obstacles
+   * (now handled): upserted with `lastSeen`, mirrored onto the graph, and
+   * dropped by negative evidence when their tile is visible but empty.
    */
   updateSensing(sensing) {
     const now = Date.now();
@@ -120,6 +129,30 @@ export class BeliefBase {
     // Stale claims about disappeared parcels are released.
     for (const parcelId of this.claims.keys()) {
       if (!this.parcels.has(parcelId)) this.claims.delete(parcelId);
+    }
+
+    // Crates (pushable obstacles): upsert sensed crates and mirror their
+    // occupancy onto the graph. A crate that moved (sensed at a new tile)
+    // has its old graph key cleared first.
+    const sensedCrateIds = new Set();
+    for (const c of sensing.crates ?? []) {
+      sensedCrateIds.add(c.id);
+      const previous = this.crates.get(c.id);
+      if (previous && (previous.x !== c.x || previous.y !== c.y)) {
+        this.graph?.clearCrate(previous.x, previous.y);
+      }
+      this.crates.set(c.id, { id: c.id, x: c.x, y: c.y, lastSeen: now });
+      this.graph?.setCrate(c.x, c.y, c.id);
+    }
+
+    // Negative evidence: a remembered crate whose tile is currently visible
+    // but that was not sensed has been pushed away / removed.
+    for (const [id, crate] of this.crates) {
+      if (sensedCrateIds.has(id)) continue;
+      if (visibleTiles.has(keyOf(crate.x, crate.y))) {
+        this.crates.delete(id);
+        this.graph?.clearCrate(crate.x, crate.y);
+      }
     }
 
     for (const a of sensing.agents ?? []) {

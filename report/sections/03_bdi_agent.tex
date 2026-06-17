@@ -52,7 +52,19 @@ mid-plan (e.g.\ between benchmark runs) cannot crash the process.
 \paragraph{Partial observability and limits.} The agent therefore has full
 knowledge of the static layout but only partial, decaying knowledge of parcels
 and opponents; when no parcel is worth pursuing it explores the
-least-recently-seen spawner. It does \emph{not} model crates or pushable
-obstacles, so maps with crate mechanics are out of scope --- confirmed by a
-course-server check where the live \texttt{crates\_one\_way} map left most tiles
-unreachable (Section~\ref{sec:experiments}).
+least-recently-seen spawner.
+
+\paragraph{Crate sensing and deterministic push.} Crates (pushable obstacles
+on the Sokoban-style maps) are now modelled. They are sensed dynamically from
+\texttt{sensing.crates}, stored in the belief base and mirrored onto the graph
+as dynamic occupancy, so every BFS detours around them automatically (the map
+parser strips a trailing \texttt{!} from tile types and marks type~\texttt{5}
+as a pushable zone). Pushing has no dedicated API: when a worthwhile target (a
+free parcel, or while carrying a delivery tile) is unreachable \emph{because of}
+a sensed crate, the option generator emits a single \texttt{push\_crate} option
+--- but only if the push is legal (the tile behind the crate is an empty
+type-5 zone, the approach tile is reachable) and a one-tile simulation shows the
+target becomes reachable. The deterministic \texttt{PushCrate} plan then walks
+to the approach tile and issues exactly one \texttt{move} into the crate; a
+rejected push aborts cleanly (one attempt, never a loop) so the normal plans and
+BFS take over. The feature is on by default and inert when no crate is sensed.

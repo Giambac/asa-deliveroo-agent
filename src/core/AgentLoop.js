@@ -36,7 +36,7 @@ export class AgentLoop {
     this.metrics = metrics;
     this.logger = logger;
     this.config = config;
-    this.optionGenerator = new OptionGenerator();
+    this.optionGenerator = new OptionGenerator({ crates: config?.crates });
   }
 
   /** Wire events, wait for the initial map/identity, start deliberating. */

@@ -76,9 +76,14 @@ Challenge~2, where compliance with missions, not farming, decides the score.
 (\texttt{deliveroojs.bears.disi.unitn.it}) confirmed connection, token
 issuance, map loading and logging all work, and that pickup acks carry no ids
 there either (validating the reconciliation layer). The live map was
-\texttt{crates\_one\_way} (9$\times$9); the agent found most tiles unreachable
-and scored~0 --- a compatibility limit (no crate modeling), not a strategy
-benchmark.
+\texttt{crates\_one\_way} (9$\times$9); at the time the agent did not model
+crates, so it found most tiles unreachable and scored~0 --- a compatibility
+limit, not a strategy benchmark. Crate sensing, occupancy-aware pathfinding and
+a deterministic single-tile push (Section~\ref{sec:bdi}) were subsequently
+added and are validated by the offline smoke suite (graph parsing of
+type-\texttt{5}/\texttt{5!}, crate-blocked BFS, \texttt{push\_crate} generation
+and the \texttt{PushCrate} plan happy/rejected paths); live crate performance on
+the course server has not yet been re-measured.
 
 \paragraph{Challenge~2 (Agent~B) validation.} On the local server with the real
 course LLM gateway (\texttt{llama-3.3-70b} over VPN, so \texttt{source=llm} rows

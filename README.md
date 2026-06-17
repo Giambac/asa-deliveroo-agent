@@ -84,6 +84,10 @@ Environment variables (see `.env.example` for the full commented list):
   `PDDL_TIMEOUT_MS`, `PDDL_MIN_PATH_LENGTH`,
   `PDDL_AVOID_WHILE_CARRYING`, `PAAS_HOST`, `PAAS_PATH` — PDDL toggles,
   safety bounds and solver;
+- `CRATES_ENABLED` (default true) — kill-switch for crate modelling + the
+  deterministic push; `PDDL_CRATES_ENABLED` (default false),
+  `PDDL_CRATES_MAX_TILES`, `PDDL_CRATES_TIMEOUT_MS` — optional crate-aware
+  PDDL domain (experiments only);
 - `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `LLM_MODEL` — LLM provider
   (optional; without it Agent B uses deterministic mission parsing).
 
@@ -316,6 +320,23 @@ interpretations, protocol messages) and — when stopped via
   `PDDL_TIMEOUT_MS`, and `PddlGoTo` is gated by
   `PDDL_MIN_PATH_LENGTH` / `PDDL_AVOID_WHILE_CARRYING`, so short paths
   and urgent delivery paths go straight to BFS.
+- Crate pushing (Sokoban maps): crates are sensed dynamically via
+  `sensing.crates`, stored in beliefs and mirrored onto the graph as
+  occupancy, so BFS/pathfinding routes around them automatically. The map
+  parser strips a trailing `!` from tile types and treats type `5` as a
+  pushable zone. When a worthwhile target (a free parcel, or — while
+  carrying — a delivery tile) is unreachable *because of* a sensed crate,
+  the `OptionGenerator` emits a `push_crate` option for a single legal push
+  (the tile behind the crate is an empty type-5 zone and the approach tile
+  is reachable), and the deterministic `PushCrate` plan walks to the
+  approach tile and issues one `executor.move` into the crate — pushing has
+  no separate API. A rejected push aborts cleanly (no loop) so normal
+  plans/BFS take over. This is on by default (kill-switch `CRATES_ENABLED`)
+  and inert when no crate is sensed. An optional crate-aware PDDL domain
+  (`DELIVEROO_CRATES_DOMAIN`, with `push-*` actions, and
+  `PddlPlanner.buildCrateProblem(...)`) is available for experiments behind
+  `PDDL_CRATES_ENABLED` (off by default); any failure falls back to the
+  deterministic push.
 - Challenge 2 suite tooling: `scripts/run-c2-suite.js` orchestrates
   supported single-agent Agent B scenarios end to end, and
   `scripts/summarize-c2-suite.js` prints a compact copyable evidence block.
@@ -366,17 +387,19 @@ verified at runtime on the challenge server:
   with belief reconciliation fallbacks (`markTilePickedUp`, `clearCarried`)
   when no ids are usable or the server contradicts the carry belief — the
   fallback was confirmed necessary on the course server too.
-- **Static map, partial dynamic sensing — no crate/pushable-obstacle
-  modeling.** The map graph is built once from `onMap` (walls,
-  delivery/spawner tiles and one-way arrows are global knowledge); parcels
-  and other agents come from *partial* sensing with memory and reward
-  decay. The agent does **not** model crates or movable obstacles, so maps
-  with crate mechanics are out of scope. A 2026-06-14 course-server
-  compatibility check confirmed connection, token issuance, map load and
-  logging all work, but the live map was `crates_one_way` (9×9): the agent
-  found most tiles unreachable (`unreachable`/`no-explore-target`
-  dominating) and scored 0 — a **compatibility limit, not a strategy
-  benchmark** (not comparable to the 26c1 baselines).
+- **Static map + partial dynamic sensing, now with crate modelling.** The
+  map graph is built once from `onMap` (walls, delivery/spawner tiles,
+  one-way arrows and type-5 pushable zones are global knowledge); parcels,
+  other agents and **crates** come from *partial* sensing with memory and
+  reward decay. Crates are modelled as dynamic occupancy (BFS detours
+  around them) and a single legal push is available via the `push_crate`
+  option/plan (see "What is implemented now"). A 2026-06-14 course-server
+  compatibility check on `crates_one_way` (9×9, *before* crate support)
+  found most tiles unreachable and scored 0; crate support now removes that
+  blocker offline, but **live crate performance has not yet been
+  re-measured** on the course server — the support is validated by offline
+  smoke tests. Advanced multi-crate / chained Sokoban planning remains out
+  of scope (one push per plan execution).
 - **Mission text formats** in the deterministic fallback parser follow
   the Challenge 2 config descriptions; coordinate *ranges* like
   "(13,15)–(16,15)" are parsed as the listed endpoints only (the LLM

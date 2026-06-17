@@ -14,9 +14,13 @@ bounded plan-library member, with a measured, honest account of where it helps
 and where the online-solver latency makes BFS the better runtime choice
 (Section~\ref{sec:pddl}).
 
-\paragraph{Limitations and future work.} The agent does not model crates or
-pushable obstacles, so crate maps (including the live \texttt{crates\_one\_way})
-are out of scope. Challenge~2 validation is one run per scenario --- encouraging,
+\paragraph{Limitations and future work.} Crate maps are now supported: crates
+are sensed, block pathfinding, and a deterministic single-tile push unblocks
+otherwise-unreachable targets (Section~\ref{sec:bdi}), with an optional gated
+crate PDDL domain (Section~\ref{sec:pddl}); this is validated offline, but live
+crate performance on the course server has not yet been re-measured, and
+chained / multi-crate Sokoban planning beyond a single push remains future work.
+Challenge~2 validation is one run per scenario --- encouraging,
 not a statistic, though the failure modes are deterministic in code. The
 \texttt{delivery-threshold} strategy under-batches because its early-delivery
 penalty is too weak and its threshold is map-independent; auto-tuning the

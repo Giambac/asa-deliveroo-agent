@@ -65,6 +65,15 @@ export class StrategyBase {
         if (mission.kind === 'deliver_at' && beliefs.carried().length === 0) return -Infinity;
         return (mission.bonus ?? 500) - distance * (helpers.decayPerTile || 0.1);
       }
+      case 'push_crate': {
+        // Push a blocking crate aside to unlock a valuable-but-unreachable
+        // target. Valued by the unblocked target's worth minus the cost of
+        // walking to the approach tile (plus the push step). Always above
+        // explore/wait when the unblock value is positive.
+        const d = helpers.distanceTo(option.approachTile.x, option.approachTile.y);
+        if (!Number.isFinite(d)) return -Infinity;
+        return (option.unblockValue ?? 0) - (d + 1) * (helpers.decayPerTile || 0.1);
+      }
       case 'explore':
         return 1; // weakly preferred over doing nothing
       case 'wait':

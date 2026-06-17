@@ -112,8 +112,18 @@ mission type itself; as a guard it also reuses their compliant-subset putdown
 selection, so it can never drop a non-compliant batch. It is therefore disabled
 by default for latency, not for correctness.
 
-\paragraph{Scope and future work.} Crate-pushing and dynamic-obstacle variants
-(the Sokoban-style maps) are out of scope: the agent assumes a static known map
-with partial sensing of parcels and opponents (Section~\ref{sec:bdi}). A natural
-extension is a richer multi-parcel delivery domain with explicit capacity and
-mission constraints.
+\paragraph{Crate domain (gated).} A second, crate-aware domain
+(\texttt{DELIVEROO\_CRATES\_DOMAIN}) extends the movement domain with crate
+objects, \texttt{crate-at}, \texttt{pushable} (type-5) and \texttt{clear}
+predicates and four \texttt{push-*} actions, modelled on the course
+\texttt{domain-deliveroojs-crates.pddl}; the matching problem generator
+(\texttt{buildCrateProblem}) emits the crate facts and movement edges from
+beliefs. It is wired only behind the \texttt{PDDL\_CRATES\_ENABLED} flag (off by
+default) for experiments and report evidence: the reliable runtime path is the
+deterministic BDI push of Section~\ref{sec:bdi}, and any PDDL failure falls back
+to it. To stay simple it is a bounded, single-target navigation-with-pushes
+problem, not a full multi-crate Sokoban optimiser.
+
+\paragraph{Future work.} A natural extension is a richer multi-parcel delivery
+domain with explicit capacity and mission constraints, and chained / multi-crate
+push planning beyond the current single-push scope.
